@@ -460,15 +460,25 @@ def parse_args():
         help='Seconds to wait between requests when crawling.'
     )
 
-    subparsers = parser.add_subparsers(dest='command')
-    subparsers.add_parser('interactive', help='Start the interactive shell.')
-    subparsers.add_parser('build', help='Crawl the site and rebuild the inverted index.')
-    subparsers.add_parser('load', help='Load the index file and validate it can be read.')
+    common_args = argparse.ArgumentParser(add_help=False)
+    common_args.add_argument('--index-file', default=DEFAULT_INDEX_FILE, help='Path to the inverted index JSON file.')
+    common_args.add_argument('--base-url', default=DEFAULT_BASE_URL, help='Website root to crawl.')
+    common_args.add_argument(
+        '--politeness-interval',
+        type=float,
+        default=DEFAULT_POLITENESS_INTERVAL,
+        help='Seconds to wait between requests when crawling.'
+    )
 
-    print_parser = subparsers.add_parser('print', help='Print index entries for a single word.')
+    subparsers = parser.add_subparsers(dest='command')
+    subparsers.add_parser('interactive', parents=[common_args], help='Start the interactive shell.')
+    subparsers.add_parser('build', parents=[common_args], help='Crawl the site and rebuild the inverted index.')
+    subparsers.add_parser('load', parents=[common_args], help='Load the index file and validate it can be read.')
+
+    print_parser = subparsers.add_parser('print', parents=[common_args], help='Print index entries for a single word.')
     print_parser.add_argument('word', help='Word to look up in the index.')
 
-    find_parser = subparsers.add_parser('find', help='Search the loaded index for a word or phrase.')
+    find_parser = subparsers.add_parser('find', parents=[common_args], help='Search the loaded index for a word or phrase.')
     find_parser.add_argument('query', nargs='+', help='Word or phrase to search for.')
     return parser.parse_args()
 
