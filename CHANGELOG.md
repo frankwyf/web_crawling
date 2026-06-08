@@ -24,6 +24,8 @@ All notable changes to this project will be documented in this file.
 - Request access log file with endpoint, status, latency, and cache flag.
 - Export filenames now include timestamps.
 - Export API limit guard tightened to max 100 rows per section page.
+- Bucket filtering parameter (`bucket`) for scoped phrase-result output.
+- Access logs now rotate daily (`access_YYYYMMDD.log`).
 
 ### Changed
 

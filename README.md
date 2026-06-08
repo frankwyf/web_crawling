@@ -73,13 +73,20 @@ With sorting:
 curl "http://127.0.0.1:8000/api/search?q=life%20is%20beautiful&sort=score_desc"
 ```
 
+With bucket filtering (phrase queries):
+
+```powershell
+curl "http://127.0.0.1:8000/api/search?q=life%20is%20beautiful&bucket=term_at_a_time"
+```
+
 Notes:
 
 - `page` defaults to `1`
 - `limit` defaults to `20` and max is `200`
 - `sort` supports `relevance`, `frequency_desc`, `score_desc`, `page_asc`, `page_desc`
+- `bucket` supports `all`, `conjunctive`, `term_at_a_time`, `per_word`
 - response meta includes `cached` and `took_ms`
-- API access logs are written to `logs/access.log`
+- API access logs are rotated daily to files like `logs/access_YYYYMMDD.log`
 
 Health check:
 
