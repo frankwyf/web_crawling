@@ -87,6 +87,30 @@ def test_api_search_rejects_invalid_sort():
     assert "sort must be one of" in response.get_json()["error"]
 
 
+def test_api_search_supports_bucket_filtering():
+    app = create_app(index_data=_sample_index())
+    client = app.test_client()
+
+    response = client.get('/api/search?q=hello%20world&bucket=term_at_a_time')
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["meta"]["bucket"] == "term_at_a_time"
+    assert "term_at_a_time" in payload
+    assert "conjunctive" not in payload
+    assert "per_word" not in payload
+
+
+def test_api_search_rejects_invalid_bucket():
+    app = create_app(index_data=_sample_index())
+    client = app.test_client()
+
+    response = client.get('/api/search?q=hello&bucket=bad')
+
+    assert response.status_code == 400
+    assert "bucket must be one of" in response.get_json()["error"]
+
+
 def test_api_export_csv_returns_attachment():
     app = create_app(index_data=_sample_index())
     client = app.test_client()

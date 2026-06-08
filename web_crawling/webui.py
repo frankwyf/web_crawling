@@ -15,6 +15,7 @@ from .core import BLUE_COLOR, ensure_index_loaded, index, search_query
 _CACHE_MAX_SIZE = 128
 _SEARCH_CACHE = OrderedDict()
 _SUPPORTED_SORTS = {'relevance', 'frequency_desc', 'score_desc', 'page_asc', 'page_desc'}
+_SUPPORTED_BUCKETS = {'all', 'conjunctive', 'term_at_a_time', 'per_word'}
 _EXPORT_LIMIT_MAX = 100
 _DEFAULT_LIMIT = 20
 
@@ -59,6 +60,15 @@ def _parse_sort(raw_value):
     return sort_mode, None
 
 
+def _parse_bucket(raw_value):
+    if raw_value is None or raw_value == '':
+        return 'all', None
+    bucket = raw_value.strip().lower()
+    if bucket not in _SUPPORTED_BUCKETS:
+        return None, f"bucket must be one of {', '.join(sorted(_SUPPORTED_BUCKETS))}"
+    return bucket, None
+
+
 def _sort_items(items, sort_mode):
     if sort_mode == 'relevance' or len(items) < 2:
         return items
@@ -86,7 +96,7 @@ def _paginate(items, page, limit):
     }
 
 
-def _to_json_payload(query, result, page, limit, took_ms, cached, sort_mode):
+def _to_json_payload(query, result, page, limit, took_ms, cached, sort_mode, bucket):
     payload = {
         'query': query,
         'type': result['type'],
@@ -96,6 +106,7 @@ def _to_json_payload(query, result, page, limit, took_ms, cached, sort_mode):
             'page': page,
             'limit': limit,
             'sort': sort_mode,
+            'bucket': bucket,
         },
     }
 
@@ -147,9 +158,12 @@ def _to_json_payload(query, result, page, limit, took_ms, cached, sort_mode):
         term_at_a_time = _sort_items(term_at_a_time, sort_mode)
         per_word = _sort_items(per_word, sort_mode)
 
-        payload['conjunctive'], payload['conjunctive_meta'] = _paginate(conjunctive, page, limit)
-        payload['term_at_a_time'], payload['term_at_a_time_meta'] = _paginate(term_at_a_time, page, limit)
-        payload['per_word'], payload['per_word_meta'] = _paginate(per_word, page, limit)
+        if bucket in {'all', 'conjunctive'}:
+            payload['conjunctive'], payload['conjunctive_meta'] = _paginate(conjunctive, page, limit)
+        if bucket in {'all', 'term_at_a_time'}:
+            payload['term_at_a_time'], payload['term_at_a_time_meta'] = _paginate(term_at_a_time, page, limit)
+        if bucket in {'all', 'per_word'}:
+            payload['per_word'], payload['per_word_meta'] = _paginate(per_word, page, limit)
     else:
         payload['results'] = []
         payload['pagination'] = {
@@ -202,6 +216,14 @@ def _pagination_for_ui(payload):
     if payload['type'] == 'single':
         return payload.get('pagination', {'page': 1, 'total_pages': 0, 'total': 0})
 
+    bucket = payload['meta'].get('bucket', 'all')
+    if bucket == 'conjunctive':
+        return payload.get('conjunctive_meta', {'page': 1, 'total_pages': 0, 'total': 0})
+    if bucket == 'term_at_a_time':
+        return payload.get('term_at_a_time_meta', {'page': 1, 'total_pages': 0, 'total': 0})
+    if bucket == 'per_word':
+        return payload.get('per_word_meta', {'page': 1, 'total_pages': 0, 'total': 0})
+
     metas = [
         payload.get('conjunctive_meta', {'total_pages': 0, 'total': 0}),
         payload.get('term_at_a_time_meta', {'total_pages': 0, 'total': 0}),
@@ -213,8 +235,8 @@ def _pagination_for_ui(payload):
     return {'page': page, 'total_pages': total_pages, 'total': total}
 
 
-def _build_page_url(query, page, limit, sort_mode):
-    params = {'q': query, 'page': page, 'limit': limit, 'sort': sort_mode}
+def _build_page_url(query, page, limit, sort_mode, bucket):
+    params = {'q': query, 'page': page, 'limit': limit, 'sort': sort_mode, 'bucket': bucket}
     return '/?' + urlencode(params)
 
 
@@ -252,17 +274,23 @@ def create_app(index_path=None, index_data=None, log_file_path='logs/access.log'
         page, page_error = _parse_positive_int(request.args.get('page'), 1, 'page', 100000)
         limit, limit_error = _parse_positive_int(request.args.get('limit'), _DEFAULT_LIMIT, 'limit', 200)
         sort_mode, sort_error = _parse_sort(request.args.get('sort'))
-        if page_error or limit_error or sort_error:
-            error = page_error or limit_error or sort_error
+        bucket, bucket_error = _parse_bucket(request.args.get('bucket'))
+        if page_error or limit_error or sort_error or bucket_error:
+            error = page_error or limit_error or sort_error or bucket_error
 
-        view_meta = {'page': page or 1, 'limit': limit or _DEFAULT_LIMIT, 'sort': sort_mode or 'relevance'}
+        view_meta = {
+            'page': page or 1,
+            'limit': limit or _DEFAULT_LIMIT,
+            'sort': sort_mode or 'relevance',
+            'bucket': bucket or 'all',
+        }
         pagination = {'page': view_meta['page'], 'total_pages': 0, 'total': 0}
 
         if query and not error:
             started = time.perf_counter()
             result, cached = _cached_search(query)
             took_ms = round((time.perf_counter() - started) * 1000, 3)
-            payload = _to_json_payload(query, result, page, limit, took_ms, cached, sort_mode)
+            payload = _to_json_payload(query, result, page, limit, took_ms, cached, sort_mode, bucket)
             sections = _result_sections_from_payload(query, payload)
             view_meta = payload['meta']
             pagination = _pagination_for_ui(payload)
@@ -270,9 +298,21 @@ def create_app(index_path=None, index_data=None, log_file_path='logs/access.log'
         prev_url = None
         next_url = None
         if query and pagination['page'] > 1:
-            prev_url = _build_page_url(query, pagination['page'] - 1, view_meta['limit'], view_meta['sort'])
+            prev_url = _build_page_url(
+                query,
+                pagination['page'] - 1,
+                view_meta['limit'],
+                view_meta['sort'],
+                view_meta.get('bucket', 'all'),
+            )
         if query and pagination['total_pages'] > 0 and pagination['page'] < pagination['total_pages']:
-            next_url = _build_page_url(query, pagination['page'] + 1, view_meta['limit'], view_meta['sort'])
+            next_url = _build_page_url(
+                query,
+                pagination['page'] + 1,
+                view_meta['limit'],
+                view_meta['sort'],
+                view_meta.get('bucket', 'all'),
+            )
 
         return render_template(
             'search.html',
@@ -316,10 +356,15 @@ def create_app(index_path=None, index_data=None, log_file_path='logs/access.log'
             took = (time.perf_counter() - started) * 1000
             _write_access_log(app.config.get('LOG_FILE_PATH'), endpoint, 400, took, False)
             return jsonify({'error': sort_error}), 400
+        bucket, bucket_error = _parse_bucket(request.args.get('bucket'))
+        if bucket_error:
+            took = (time.perf_counter() - started) * 1000
+            _write_access_log(app.config.get('LOG_FILE_PATH'), endpoint, 400, took, False)
+            return jsonify({'error': bucket_error}), 400
 
         result, cached = _cached_search(query)
         took_ms = round((time.perf_counter() - started) * 1000, 3)
-        payload = _to_json_payload(query, result, page, limit, took_ms, cached, sort_mode)
+        payload = _to_json_payload(query, result, page, limit, took_ms, cached, sort_mode, bucket)
         _write_access_log(app.config.get('LOG_FILE_PATH'), endpoint, 200, took_ms, cached)
         return jsonify(payload)
 
@@ -356,10 +401,15 @@ def create_app(index_path=None, index_data=None, log_file_path='logs/access.log'
             took = (time.perf_counter() - started) * 1000
             _write_access_log(app.config.get('LOG_FILE_PATH'), endpoint, 400, took, False)
             return jsonify({'error': sort_error}), 400
+        bucket, bucket_error = _parse_bucket(request.args.get('bucket'))
+        if bucket_error:
+            took = (time.perf_counter() - started) * 1000
+            _write_access_log(app.config.get('LOG_FILE_PATH'), endpoint, 400, took, False)
+            return jsonify({'error': bucket_error}), 400
 
         result, cached = _cached_search(query)
         took_ms = round((time.perf_counter() - started) * 1000, 3)
-        payload = _to_json_payload(query, result, page, limit, took_ms, cached, sort_mode)
+        payload = _to_json_payload(query, result, page, limit, took_ms, cached, sort_mode, bucket)
 
         stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         if output_format == 'json':

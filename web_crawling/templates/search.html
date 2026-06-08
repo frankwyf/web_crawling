@@ -41,7 +41,7 @@
     .sub { margin: 0; color: var(--ink-soft); }
     form {
       display: grid;
-      grid-template-columns: 1fr 120px 90px 160px auto;
+      grid-template-columns: 1fr 120px 90px 160px 170px auto;
       gap: 10px;
       padding: 18px 24px;
       border-bottom: 1px solid var(--line);
@@ -163,6 +163,12 @@
         <option value="page_asc" {% if view_meta.sort == 'page_asc' %}selected{% endif %}>page_asc</option>
         <option value="page_desc" {% if view_meta.sort == 'page_desc' %}selected{% endif %}>page_desc</option>
       </select>
+      <select name="bucket">
+        <option value="all" {% if view_meta.bucket == 'all' %}selected{% endif %}>all</option>
+        <option value="conjunctive" {% if view_meta.bucket == 'conjunctive' %}selected{% endif %}>conjunctive</option>
+        <option value="term_at_a_time" {% if view_meta.bucket == 'term_at_a_time' %}selected{% endif %}>term_at_a_time</option>
+        <option value="per_word" {% if view_meta.bucket == 'per_word' %}selected{% endif %}>per_word</option>
+      </select>
       <button type="submit">Search</button>
     </form>
 
@@ -172,11 +178,11 @@
 
     {% if query %}
     <div class="toolbar">
-      <a class="tool-link" href="/api/search?q={{ query|urlencode }}&page={{ view_meta.page }}&limit={{ view_meta.limit }}&sort={{ view_meta.sort }}" target="_blank" rel="noreferrer">View JSON</a>
-      <a class="tool-link" href="/api/export?q={{ query|urlencode }}&format=json&page={{ view_meta.page }}&limit={{ view_meta.limit }}&sort={{ view_meta.sort }}" target="_blank" rel="noreferrer">Export JSON</a>
-      <a class="tool-link" href="/api/export?q={{ query|urlencode }}&format=csv&page={{ view_meta.page }}&limit={{ view_meta.limit }}&sort={{ view_meta.sort }}" target="_blank" rel="noreferrer">Export CSV</a>
+      <a class="tool-link" href="/api/search?q={{ query|urlencode }}&page={{ view_meta.page }}&limit={{ view_meta.limit }}&sort={{ view_meta.sort }}&bucket={{ view_meta.bucket }}" target="_blank" rel="noreferrer">View JSON</a>
+      <a class="tool-link" href="/api/export?q={{ query|urlencode }}&format=json&page={{ view_meta.page }}&limit={{ view_meta.limit }}&sort={{ view_meta.sort }}&bucket={{ view_meta.bucket }}" target="_blank" rel="noreferrer">Export JSON</a>
+      <a class="tool-link" href="/api/export?q={{ query|urlencode }}&format=csv&page={{ view_meta.page }}&limit={{ view_meta.limit }}&sort={{ view_meta.sort }}&bucket={{ view_meta.bucket }}" target="_blank" rel="noreferrer">Export CSV</a>
     </div>
-    <div class="meta">page={{ view_meta.page }}, limit={{ view_meta.limit }}, sort={{ view_meta.sort }}</div>
+    <div class="meta">page={{ view_meta.page }}, limit={{ view_meta.limit }}, sort={{ view_meta.sort }}, bucket={{ view_meta.bucket }}</div>
     {% if pagination.total_pages > 0 %}
     <div class="pager">
       <span class="meta">results={{ pagination.total }}, page {{ pagination.page }} / {{ pagination.total_pages }}</span>
