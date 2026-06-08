@@ -240,6 +240,19 @@ def _build_page_url(query, page, limit, sort_mode, bucket):
     return '/?' + urlencode(params)
 
 
+def _resolve_log_path(log_path):
+    if not log_path:
+        return None
+    day_stamp = datetime.now().strftime('%Y%m%d')
+    if '{date}' in log_path:
+        return log_path.replace('{date}', day_stamp)
+    path_obj = Path(log_path)
+    if path_obj.name.endswith('.log'):
+        stem = path_obj.stem
+        return str(path_obj.with_name(f'{stem}_{day_stamp}.log'))
+    return str(path_obj)
+
+
 def _write_access_log(log_path, endpoint, status_code, took_ms, cached):
     if not log_path:
         return
@@ -249,13 +262,14 @@ def _write_access_log(log_path, endpoint, status_code, took_ms, cached):
         f"{timestamp} method={request.method} endpoint={endpoint} status={status_code} "
         f"took_ms={took_ms:.3f} cached={cached} query=\"{query}\""
     )
-    path_obj = Path(log_path)
+    resolved = _resolve_log_path(log_path)
+    path_obj = Path(resolved)
     path_obj.parent.mkdir(parents=True, exist_ok=True)
     with path_obj.open('a', encoding='utf-8') as f:
         f.write(line + '\n')
 
 
-def create_app(index_path=None, index_data=None, log_file_path='logs/access.log'):
+def create_app(index_path=None, index_data=None, log_file_path='logs/access_{date}.log'):
     app = Flask(__name__, template_folder='templates')
     app.config['LOG_FILE_PATH'] = log_file_path
 

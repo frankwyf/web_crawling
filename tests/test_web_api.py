@@ -1,6 +1,7 @@
 import re
+from datetime import datetime
 
-from web_crawling.webui import create_app
+from web_crawling.webui import _resolve_log_path, create_app
 
 
 def _sample_index():
@@ -136,14 +137,22 @@ def test_api_export_rejects_limit_above_export_max():
 
 
 def test_api_request_writes_access_log(tmp_path):
-    log_path = tmp_path / 'access.log'
-    app = create_app(index_data=_sample_index(), log_file_path=str(log_path))
+    log_template = tmp_path / 'access_{date}.log'
+    app = create_app(index_data=_sample_index(), log_file_path=str(log_template))
     client = app.test_client()
 
     response = client.get('/api/search?q=hello')
 
+    expected_path = tmp_path / f"access_{datetime.now().strftime('%Y%m%d')}.log"
     assert response.status_code == 200
-    assert log_path.exists()
-    content = log_path.read_text(encoding='utf-8')
+    assert expected_path.exists()
+    content = expected_path.read_text(encoding='utf-8')
     assert 'endpoint=/api/search' in content
     assert 'status=200' in content
+
+
+def test_resolve_log_path_appends_date_suffix_for_plain_log_file():
+    resolved = _resolve_log_path('logs/access.log')
+    expected_day = datetime.now().strftime('%Y%m%d')
+
+    assert resolved.endswith(f'access_{expected_day}.log')
