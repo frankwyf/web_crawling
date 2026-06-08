@@ -3,6 +3,7 @@ import io
 import json
 import math
 import re
+import statistics
 import shlex
 import time
 from collections import Counter, OrderedDict
@@ -347,14 +348,35 @@ def _top_counts(counter, limit=5):
     return [{'label': label, 'count': count} for label, count in counter.most_common(limit)]
 
 
+def _percentile(values, percentile):
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    rank = (len(ordered) - 1) * percentile
+    lower = math.floor(rank)
+    upper = math.ceil(rank)
+    if lower == upper:
+        return ordered[int(rank)]
+    lower_value = ordered[lower]
+    upper_value = ordered[upper]
+    return lower_value + (upper_value - lower_value) * (rank - lower)
+
+
 def _build_dashboard_payload(log_path):
     records = _load_access_log_records(log_path)
     total_requests = len(records)
     search_requests = [record for record in records if record.get('endpoint') == '/api/search']
     export_requests = [record for record in records if record.get('endpoint') == '/api/export']
+    insight_requests = [record for record in records if record.get('endpoint') == '/api/insights']
+    dashboard_requests = [record for record in records if record.get('endpoint') == '/dashboard']
     cache_hits = sum(1 for record in records if record.get('cached', '').lower() == 'true')
     latencies = [_safe_float(record.get('took_ms')) for record in records]
     avg_latency = round(sum(latencies) / len(latencies), 3) if latencies else 0.0
+    p95_latency = round(_percentile(latencies, 0.95), 3) if latencies else 0.0
+    success_total = sum(1 for record in records if 200 <= _safe_int(record.get('status')) < 400)
+    error_total = total_requests - success_total
 
     query_counter = Counter(record.get('query', '') for record in search_requests if record.get('query'))
     endpoint_counter = Counter(record.get('endpoint', 'unknown') for record in records)
@@ -362,6 +384,17 @@ def _build_dashboard_payload(log_path):
     sort_counter = Counter(record.get('sort', 'relevance') for record in search_requests if record.get('sort'))
     bucket_counter = Counter(record.get('bucket', 'all') for record in search_requests if record.get('bucket'))
     daily_counter = Counter(record.get('timestamp', '')[:10] for record in records if record.get('timestamp'))
+    hourly_counter = Counter(record.get('timestamp', '')[11:13] for record in records if record.get('timestamp'))
+    daily_series = [
+        {'label': date, 'count': count}
+        for date, count in sorted(daily_counter.items())
+    ]
+    hourly_series = [
+        {'label': f'{hour}:00', 'count': hourly_counter.get(f'{hour:02d}', 0)}
+        for hour in range(24)
+    ]
+    total_search_queries = sum(query_counter.values())
+    top_query_share = round((query_counter.most_common(1)[0][1] / total_search_queries) * 100, 1) if total_search_queries else 0.0
 
     recent_requests = [
         {
@@ -391,16 +424,27 @@ def _build_dashboard_payload(log_path):
             'total': total_requests,
             'search_total': len(search_requests),
             'export_total': len(export_requests),
+            'insight_total': len(insight_requests),
+            'dashboard_total': len(dashboard_requests),
             'cache_hits': cache_hits,
             'cache_hit_rate': round((cache_hits / total_requests) * 100, 1) if total_requests else 0.0,
             'avg_latency_ms': avg_latency,
+            'p95_latency_ms': p95_latency,
+            'success_rate': round((success_total / total_requests) * 100, 1) if total_requests else 0.0,
+            'error_rate': round((error_total / total_requests) * 100, 1) if total_requests else 0.0,
+        },
+        'engagement': {
+            'unique_queries': len(query_counter),
+            'top_query_share': top_query_share,
+            'active_days': len(daily_series),
         },
         'top_queries': _top_counts(query_counter),
         'top_endpoints': _top_counts(endpoint_counter),
         'top_status_codes': _top_counts(status_counter),
         'top_sorts': _top_counts(sort_counter),
         'top_buckets': _top_counts(bucket_counter),
-        'daily_volume': _top_counts(daily_counter, limit=7),
+        'daily_volume': daily_series[-7:],
+        'hourly_volume': hourly_series,
         'recent_requests': recent_requests,
         'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'log_files': [str(path) for path in _dashboard_log_files(log_path)],

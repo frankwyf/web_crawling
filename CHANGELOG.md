@@ -29,6 +29,7 @@ All notable changes to this project will be documented in this file.
 - Analytics dashboard at `/dashboard` plus `/api/insights` for request/log analysis.
 - Exportable analytics reports at `/api/insights/export` in JSON and CSV formats.
 - Dependency entry files now delegate to `pyproject.toml`, and setuptools package discovery is restricted to the application package.
+- Unified the search and dashboard visuals through a shared stylesheet, and added richer dashboard KPIs and traffic trend views.
 
 ### Changed
 

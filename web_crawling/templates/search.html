@@ -4,146 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Inverted Index Search UI</title>
-  <style>
-    :root {
-      --bg-1: #f2f7ff;
-      --bg-2: #fdf7ef;
-      --ink: #14213d;
-      --ink-soft: #4d5870;
-      --line: #d7deec;
-      --accent: #f48c06;
-      --card: #ffffff;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: "Segoe UI", "Noto Sans", sans-serif;
-      color: var(--ink);
-      background: radial-gradient(circle at 20% 10%, #fffef8 0%, var(--bg-1) 45%, var(--bg-2) 100%);
-      min-height: 100vh;
-      padding: 24px;
-    }
-    .shell {
-      max-width: 960px;
-      margin: 0 auto;
-      background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      overflow: hidden;
-      box-shadow: 0 10px 30px rgba(20, 33, 61, 0.08);
-    }
-    .hero {
-      padding: 28px;
-      border-bottom: 1px solid var(--line);
-      background: linear-gradient(120deg, #f8fbff 0%, #fff8ee 100%);
-    }
-    h1 { margin: 0 0 8px 0; font-size: 30px; }
-    .sub { margin: 0; color: var(--ink-soft); }
-    form {
-      display: grid;
-      grid-template-columns: 1fr 120px 90px 160px 170px auto;
-      gap: 10px;
-      padding: 18px 24px;
-      border-bottom: 1px solid var(--line);
-      background: #fff;
-    }
-    input[type="text"] {
-      width: 100%;
-      padding: 12px 14px;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      font-size: 15px;
-    }
-    select, input[type="number"] {
-      width: 100%;
-      padding: 12px 10px;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      font-size: 14px;
-      background: #fff;
-    }
-    button {
-      border: none;
-      border-radius: 10px;
-      padding: 0 16px;
-      font-size: 14px;
-      font-weight: 700;
-      background: var(--accent);
-      color: #fff;
-      cursor: pointer;
-    }
-    .content { padding: 20px 24px 28px; }
-    .empty { color: var(--ink-soft); }
-    .section {
-      margin-top: 16px;
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      overflow: hidden;
-    }
-    .section h2 {
-      margin: 0;
-      padding: 12px 14px;
-      font-size: 16px;
-      border-bottom: 1px solid var(--line);
-      background: #f7faff;
-    }
-    .row {
-      padding: 12px 14px;
-      border-top: 1px solid #edf2fb;
-      font-size: 14px;
-      line-height: 1.5;
-      word-break: break-word;
-    }
-    .row:first-of-type { border-top: none; }
-    .score { color: var(--ink-soft); }
-    .url { color: #1d5ea8; text-decoration: none; }
-    .toolbar {
-      padding: 0 24px 16px;
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-    .tool-link {
-      color: #0f4f8c;
-      text-decoration: none;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 6px 10px;
-      background: #fff;
-      font-size: 13px;
-    }
-    .meta {
-      padding: 0 24px;
-      color: var(--ink-soft);
-      font-size: 13px;
-    }
-    .pager {
-      padding: 10px 24px 0;
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-    .pager .tool-link {
-      font-size: 12px;
-    }
-    .error {
-      margin: 12px 24px 0;
-      border: 1px solid #f4c7c7;
-      background: #fff5f5;
-      color: #9c2f2f;
-      border-radius: 10px;
-      padding: 10px 12px;
-      font-size: 14px;
-    }
-    @media (max-width: 640px) {
-      body { padding: 12px; }
-      h1 { font-size: 24px; }
-      form { grid-template-columns: 1fr; }
-      button { height: 44px; }
-    }
-  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}" />
 </head>
 <body>
   <main class="shell">
@@ -200,7 +61,7 @@
         <p class="empty">No result found for "{{ query }}".</p>
       {% else %}
         {% for section in sections %}
-          <article class="section">
+          <article class="section-list">
             <h2>{{ section.title }}</h2>
             {% for item in section.items %}
               <div class="row">

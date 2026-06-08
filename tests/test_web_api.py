@@ -173,6 +173,9 @@ def test_dashboard_insights_aggregate_requests(tmp_path):
     assert insights['requests']['export_total'] == 1
     assert insights['top_queries'][0]['label'] == 'hello'
     assert insights['top_buckets'][0]['label'] == 'per_word'
+    assert insights['engagement']['unique_queries'] >= 1
+    assert 'p95_latency_ms' in insights['requests']
+    assert insights['daily_volume']
 
 
 def test_dashboard_page_renders():

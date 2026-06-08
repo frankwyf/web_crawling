@@ -36,7 +36,7 @@ include = ["web_crawling*"]
 exclude = ["tests*", "logs*"]
 
 [tool.setuptools.package-data]
-web_crawling = ["templates/*.html"]
+web_crawling = ["templates/*.html", "static/*.css"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
