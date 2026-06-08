@@ -185,3 +185,32 @@ def test_dashboard_page_renders():
     assert response.status_code == 200
     assert 'Search Analytics Dashboard' in html
     assert 'Cache Hit Rate' in html
+
+
+def test_insights_export_returns_csv_report(tmp_path):
+    log_template = tmp_path / 'access_{date}.log'
+    app = create_app(index_data=_sample_index(), log_file_path=str(log_template))
+    client = app.test_client()
+
+    client.get('/api/search?q=hello')
+    response = client.get('/api/insights/export?format=csv')
+
+    disposition = response.headers['Content-Disposition']
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert disposition.startswith('attachment; filename=insights_report_')
+    assert disposition.endswith('.csv')
+    assert 'section,label,value' in body
+    assert 'requests,total,' in body
+    assert 'top_queries,hello,' in body
+
+
+def test_insights_export_rejects_invalid_format():
+    app = create_app(index_data=_sample_index())
+    client = app.test_client()
+
+    response = client.get('/api/insights/export?format=txt')
+
+    assert response.status_code == 400
+    assert response.get_json()['error'] == 'format must be json or csv'

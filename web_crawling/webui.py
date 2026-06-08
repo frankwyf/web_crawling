@@ -215,6 +215,30 @@ def _to_csv_text(payload):
     return output.getvalue()
 
 
+def _dashboard_to_csv_text(dashboard):
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=['section', 'label', 'value'])
+    writer.writeheader()
+
+    for key, value in dashboard.get('index', {}).items():
+        writer.writerow({'section': 'index', 'label': key, 'value': value})
+
+    for key, value in dashboard.get('requests', {}).items():
+        writer.writerow({'section': 'requests', 'label': key, 'value': value})
+
+    for section_name in ['top_queries', 'top_endpoints', 'top_status_codes', 'top_sorts', 'top_buckets', 'daily_volume']:
+        for item in dashboard.get(section_name, []):
+            writer.writerow({'section': section_name, 'label': item.get('label', ''), 'value': item.get('count', '')})
+
+    for item in dashboard.get('recent_requests', []):
+        label = f"{item.get('timestamp', '')} {item.get('endpoint', '')}".strip()
+        writer.writerow({'section': 'recent_requests', 'label': label, 'value': item.get('query', '')})
+
+    writer.writerow({'section': 'generated_at', 'label': 'generated_at', 'value': dashboard.get('generated_at', '')})
+    writer.writerow({'section': 'generated_at', 'label': 'log_files', 'value': len(dashboard.get('log_files', []))})
+    return output.getvalue()
+
+
 def _pagination_for_ui(payload):
     if payload['type'] == 'single':
         return payload.get('pagination', {'page': 1, 'total_pages': 0, 'total': 0})
@@ -482,6 +506,36 @@ def create_app(index_path=None, index_data=None, log_file_path='logs/access_{dat
     @app.get('/api/insights')
     def api_insights():
         return jsonify(_build_dashboard_payload(app.config.get('LOG_FILE_PATH')))
+
+    @app.get('/api/insights/export')
+    def api_insights_export():
+        started = time.perf_counter()
+        endpoint = '/api/insights/export'
+        output_format = request.args.get('format', 'json').strip().lower()
+        if output_format not in {'json', 'csv'}:
+            took = (time.perf_counter() - started) * 1000
+            _write_access_log(app.config.get('LOG_FILE_PATH'), endpoint, 400, took, False)
+            return jsonify({'error': 'format must be json or csv'}), 400
+
+        dashboard = _build_dashboard_payload(app.config.get('LOG_FILE_PATH'))
+        took_ms = round((time.perf_counter() - started) * 1000, 3)
+
+        stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        if output_format == 'json':
+            text = json.dumps(dashboard, ensure_ascii=False, indent=2)
+            filename = f'insights_report_{stamp}.json'
+            content_type = 'application/json; charset=utf-8'
+        else:
+            text = _dashboard_to_csv_text(dashboard)
+            filename = f'insights_report_{stamp}.csv'
+            content_type = 'text/csv; charset=utf-8'
+
+        _write_access_log(app.config.get('LOG_FILE_PATH'), endpoint, 200, took_ms, False)
+        return Response(
+            text,
+            headers={'Content-Disposition': f'attachment; filename={filename}'},
+            content_type=content_type,
+        )
 
     @app.get('/dashboard')
     def dashboard():

@@ -27,6 +27,7 @@ All notable changes to this project will be documented in this file.
 - Bucket filtering parameter (`bucket`) for scoped phrase-result output.
 - Access logs now rotate daily (`access_YYYYMMDD.log`).
 - Analytics dashboard at `/dashboard` plus `/api/insights` for request/log analysis.
+- Exportable analytics reports at `/api/insights/export` in JSON and CSV formats.
 
 ### Changed
 

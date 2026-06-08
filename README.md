@@ -127,6 +127,13 @@ Useful API endpoint:
 
 The dashboard surfaces request volume, cache hit rate, top queries, sort/bucket usage, and recent activity.
 
+You can also export the dashboard report:
+
+```text
+/api/insights/export?format=json
+/api/insights/export?format=csv
+```
+
 ## Rebuild Index
 
 ```powershell
