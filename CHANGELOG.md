@@ -28,6 +28,7 @@ All notable changes to this project will be documented in this file.
 - Access logs now rotate daily (`access_YYYYMMDD.log`).
 - Analytics dashboard at `/dashboard` plus `/api/insights` for request/log analysis.
 - Exportable analytics reports at `/api/insights/export` in JSON and CSV formats.
+- Dependency entry files now delegate to `pyproject.toml`, and setuptools package discovery is restricted to the application package.
 
 ### Changed
 
