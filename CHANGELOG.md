@@ -26,6 +26,7 @@ All notable changes to this project will be documented in this file.
 - Export API limit guard tightened to max 100 rows per section page.
 - Bucket filtering parameter (`bucket`) for scoped phrase-result output.
 - Access logs now rotate daily (`access_YYYYMMDD.log`).
+- Analytics dashboard at `/dashboard` plus `/api/insights` for request/log analysis.
 
 ### Changed
 

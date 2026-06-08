@@ -104,6 +104,29 @@ curl "http://127.0.0.1:8000/api/export?q=life%20is%20beautiful&format=csv" -o se
 Export also accepts `page` and `limit`.
 For export, `limit` max is `100` to prevent overly large downloads.
 
+### 5. Analytics Dashboard
+
+Use the dashboard to show data-analysis style insights from your own usage logs:
+
+```powershell
+.
+\.venv\Scripts\python .\search.py web
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8000/dashboard
+```
+
+Useful API endpoint:
+
+```text
+/api/insights
+```
+
+The dashboard surfaces request volume, cache hit rate, top queries, sort/bucket usage, and recent activity.
+
 ## Rebuild Index
 
 ```powershell

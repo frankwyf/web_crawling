@@ -2,8 +2,10 @@ import csv
 import io
 import json
 import math
+import re
+import shlex
 import time
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlencode
@@ -18,6 +20,7 @@ _SUPPORTED_SORTS = {'relevance', 'frequency_desc', 'score_desc', 'page_asc', 'pa
 _SUPPORTED_BUCKETS = {'all', 'conjunctive', 'term_at_a_time', 'per_word'}
 _EXPORT_LIMIT_MAX = 100
 _DEFAULT_LIMIT = 20
+_LOG_LINE_PREFIX = re.compile(r'^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+(?P<rest>.*)$')
 
 
 def _normalize_query(query):
@@ -253,14 +256,147 @@ def _resolve_log_path(log_path):
     return str(path_obj)
 
 
+def _dashboard_log_files(log_path):
+    if not log_path:
+        return []
+
+    path_obj = Path(log_path)
+    parent = path_obj.parent if str(path_obj.parent) != '.' else Path('.')
+    name = path_obj.name
+
+    if '{date}' in name:
+        pattern = name.replace('{date}', '*')
+    elif re.search(r'_\d{8}\.log$', name):
+        pattern = re.sub(r'_\d{8}(?=\.log$)', '_*', name)
+    elif name.endswith('.log'):
+        pattern = f'{path_obj.stem}*.log'
+    else:
+        pattern = f'{name}*'
+
+    return sorted(parent.glob(pattern))
+
+
+def _parse_access_log_line(line):
+    match = _LOG_LINE_PREFIX.match(line.strip())
+    if not match:
+        return None
+
+    record = {'timestamp': match.group('timestamp')}
+    try:
+        for token in shlex.split(match.group('rest')):
+            if '=' not in token:
+                continue
+            key, value = token.split('=', 1)
+            record[key] = value
+    except ValueError:
+        return None
+    return record
+
+
+def _load_access_log_records(log_path):
+    records = []
+    for file_path in _dashboard_log_files(log_path):
+        if not file_path.exists():
+            continue
+        for line in file_path.read_text(encoding='utf-8').splitlines():
+            record = _parse_access_log_line(line)
+            if record:
+                records.append(record)
+    return records
+
+
+def _safe_int(value, default=0):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _top_counts(counter, limit=5):
+    return [{'label': label, 'count': count} for label, count in counter.most_common(limit)]
+
+
+def _build_dashboard_payload(log_path):
+    records = _load_access_log_records(log_path)
+    total_requests = len(records)
+    search_requests = [record for record in records if record.get('endpoint') == '/api/search']
+    export_requests = [record for record in records if record.get('endpoint') == '/api/export']
+    cache_hits = sum(1 for record in records if record.get('cached', '').lower() == 'true')
+    latencies = [_safe_float(record.get('took_ms')) for record in records]
+    avg_latency = round(sum(latencies) / len(latencies), 3) if latencies else 0.0
+
+    query_counter = Counter(record.get('query', '') for record in search_requests if record.get('query'))
+    endpoint_counter = Counter(record.get('endpoint', 'unknown') for record in records)
+    status_counter = Counter(record.get('status', 'unknown') for record in records)
+    sort_counter = Counter(record.get('sort', 'relevance') for record in search_requests if record.get('sort'))
+    bucket_counter = Counter(record.get('bucket', 'all') for record in search_requests if record.get('bucket'))
+    daily_counter = Counter(record.get('timestamp', '')[:10] for record in records if record.get('timestamp'))
+
+    recent_requests = [
+        {
+            'timestamp': record.get('timestamp', ''),
+            'endpoint': record.get('endpoint', ''),
+            'status': _safe_int(record.get('status')),
+            'latency': _safe_float(record.get('took_ms')),
+            'cached': record.get('cached', 'False'),
+            'query': record.get('query', ''),
+            'sort': record.get('sort', ''),
+            'bucket': record.get('bucket', ''),
+        }
+        for record in records[-10:]
+    ][::-1]
+
+    unique_pages = set()
+    for entries in index.values():
+        for entry in entries:
+            unique_pages.add(entry.get('URL'))
+
+    return {
+        'index': {
+            'unique_terms': len(index),
+            'unique_pages': len(unique_pages),
+        },
+        'requests': {
+            'total': total_requests,
+            'search_total': len(search_requests),
+            'export_total': len(export_requests),
+            'cache_hits': cache_hits,
+            'cache_hit_rate': round((cache_hits / total_requests) * 100, 1) if total_requests else 0.0,
+            'avg_latency_ms': avg_latency,
+        },
+        'top_queries': _top_counts(query_counter),
+        'top_endpoints': _top_counts(endpoint_counter),
+        'top_status_codes': _top_counts(status_counter),
+        'top_sorts': _top_counts(sort_counter),
+        'top_buckets': _top_counts(bucket_counter),
+        'daily_volume': _top_counts(daily_counter, limit=7),
+        'recent_requests': recent_requests,
+        'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'log_files': [str(path) for path in _dashboard_log_files(log_path)],
+    }
+
+
 def _write_access_log(log_path, endpoint, status_code, took_ms, cached):
     if not log_path:
         return
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     query = request.args.get('q', '').replace('\n', ' ')
+    page = request.args.get('page', '')
+    limit = request.args.get('limit', '')
+    sort_mode = request.args.get('sort', '')
+    bucket = request.args.get('bucket', '')
+    output_format = request.args.get('format', '')
     line = (
         f"{timestamp} method={request.method} endpoint={endpoint} status={status_code} "
-        f"took_ms={took_ms:.3f} cached={cached} query=\"{query}\""
+        f"took_ms={took_ms:.3f} cached={cached} query=\"{query}\" page={page} limit={limit} "
+        f"sort={sort_mode} bucket={bucket} format={output_format}"
     )
     resolved = _resolve_log_path(log_path)
     path_obj = Path(resolved)
@@ -342,6 +478,14 @@ def create_app(index_path=None, index_data=None, log_file_path='logs/access_{dat
     @app.get('/health')
     def health():
         return {'status': 'ok', 'index_words': len(index), 'cache_size': len(_SEARCH_CACHE)}
+
+    @app.get('/api/insights')
+    def api_insights():
+        return jsonify(_build_dashboard_payload(app.config.get('LOG_FILE_PATH')))
+
+    @app.get('/dashboard')
+    def dashboard():
+        return render_template('dashboard.html', dashboard=_build_dashboard_payload(app.config.get('LOG_FILE_PATH')))
 
     @app.get('/api/search')
     def api_search():

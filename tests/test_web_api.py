@@ -156,3 +156,32 @@ def test_resolve_log_path_appends_date_suffix_for_plain_log_file():
     expected_day = datetime.now().strftime('%Y%m%d')
 
     assert resolved.endswith(f'access_{expected_day}.log')
+
+
+def test_dashboard_insights_aggregate_requests(tmp_path):
+    log_template = tmp_path / 'access_{date}.log'
+    app = create_app(index_data=_sample_index(), log_file_path=str(log_template))
+    client = app.test_client()
+
+    client.get('/api/search?q=hello&bucket=per_word')
+    client.get('/api/export?q=hello&format=json&bucket=per_word')
+
+    insights = client.get('/api/insights').get_json()
+
+    assert insights['requests']['total'] == 2
+    assert insights['requests']['search_total'] == 1
+    assert insights['requests']['export_total'] == 1
+    assert insights['top_queries'][0]['label'] == 'hello'
+    assert insights['top_buckets'][0]['label'] == 'per_word'
+
+
+def test_dashboard_page_renders():
+    app = create_app(index_data=_sample_index())
+    client = app.test_client()
+
+    response = client.get('/dashboard')
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert 'Search Analytics Dashboard' in html
+    assert 'Cache Hit Rate' in html

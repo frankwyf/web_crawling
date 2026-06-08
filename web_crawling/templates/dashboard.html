@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Search Analytics Dashboard</title>
+  <style>
+    :root {
+      --bg-1: #f1f6ff;
+      --bg-2: #fff7eb;
+      --ink: #14213d;
+      --ink-soft: #5a6782;
+      --line: #d8e0ef;
+      --accent: #2563eb;
+      --accent-2: #f59e0b;
+      --good: #059669;
+      --card: rgba(255, 255, 255, 0.92);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 24px;
+      color: var(--ink);
+      font-family: "Segoe UI", "Noto Sans", sans-serif;
+      background: radial-gradient(circle at top left, #ffffff 0%, var(--bg-1) 38%, var(--bg-2) 100%);
+    }
+    .shell {
+      max-width: 1180px;
+      margin: 0 auto;
+    }
+    .hero {
+      background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 65%, #7c2d12 140%);
+      color: #fff;
+      border-radius: 22px;
+      padding: 28px;
+      box-shadow: 0 20px 40px rgba(15, 23, 42, 0.22);
+    }
+    .hero h1 {
+      margin: 0 0 10px 0;
+      font-size: 34px;
+      letter-spacing: -0.02em;
+    }
+    .hero p {
+      margin: 0;
+      max-width: 760px;
+      color: rgba(255, 255, 255, 0.82);
+      line-height: 1.6;
+    }
+    .hero .links {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+    .hero a {
+      color: #fff;
+      text-decoration: none;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 13px;
+      background: rgba(255, 255, 255, 0.08);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 12px 24px rgba(15, 23, 42, 0.06);
+      backdrop-filter: blur(8px);
+    }
+    .card .label {
+      color: var(--ink-soft);
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .card .value {
+      margin-top: 10px;
+      font-size: 30px;
+      font-weight: 800;
+    }
+    .section {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 14px;
+    }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 12px 24px rgba(15, 23, 42, 0.05);
+    }
+    .panel h2 {
+      margin: 0 0 12px 0;
+      font-size: 18px;
+    }
+    .bar-list {
+      display: grid;
+      gap: 12px;
+    }
+    .bar-row {
+      display: grid;
+      gap: 6px;
+    }
+    .bar-row .topline {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 13px;
+      color: var(--ink-soft);
+    }
+    .bar-track {
+      height: 10px;
+      border-radius: 999px;
+      background: #e7ecf5;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      text-align: left;
+      padding: 10px 8px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    th {
+      color: var(--ink-soft);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .status-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #e8f5ef;
+      color: var(--good);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .muted { color: var(--ink-soft); }
+    .recent-grid {
+      display: grid;
+      gap: 10px;
+    }
+    .recent-item {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fff;
+    }
+    .recent-item .meta {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 6px;
+      font-size: 12px;
+      color: var(--ink-soft);
+    }
+    .recent-item .query {
+      font-weight: 700;
+      margin: 4px 0;
+      word-break: break-word;
+    }
+    .recent-item .sub {
+      font-size: 13px;
+      color: var(--ink-soft);
+    }
+    @media (max-width: 900px) {
+      .grid, .section { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+      body { padding: 12px; }
+      .hero h1 { font-size: 26px; }
+      .card .value { font-size: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <h1>Search Analytics Dashboard</h1>
+      <p>
+        This dashboard turns crawler activity into a portfolio-ready data analysis view: it surfaces index scale,
+        request volume, cache efficiency, latency, popular queries, and recent usage patterns.
+      </p>
+      <div class="links">
+        <a href="/">Back to Search</a>
+        <a href="/api/insights" target="_blank" rel="noreferrer">View JSON Insights</a>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <div class="label">Indexed Terms</div>
+        <div class="value">{{ dashboard.index.unique_terms }}</div>
+      </div>
+      <div class="card">
+        <div class="label">Indexed Pages</div>
+        <div class="value">{{ dashboard.index.unique_pages }}</div>
+      </div>
+      <div class="card">
+        <div class="label">Requests</div>
+        <div class="value">{{ dashboard.requests.total }}</div>
+      </div>
+      <div class="card">
+        <div class="label">Cache Hit Rate</div>
+        <div class="value">{{ dashboard.requests.cache_hit_rate }}%</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="panel">
+        <h2>Request Mix</h2>
+        <div class="bar-list">
+          {% set max_endpoint = dashboard.top_endpoints[0].count if dashboard.top_endpoints else 1 %}
+          {% for item in dashboard.top_endpoints %}
+            <div class="bar-row">
+              <div class="topline"><span>{{ item.label }}</span><span>{{ item.count }}</span></div>
+              <div class="bar-track"><div class="bar-fill" style="width: {{ (item.count / max_endpoint * 100) if max_endpoint else 0 }}%"></div></div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Latency & Cache</h2>
+        <table>
+          <tr><th>Avg latency</th><td>{{ dashboard.requests.avg_latency_ms }} ms</td></tr>
+          <tr><th>Search requests</th><td>{{ dashboard.requests.search_total }}</td></tr>
+          <tr><th>Export requests</th><td>{{ dashboard.requests.export_total }}</td></tr>
+          <tr><th>Cache hits</th><td><span class="status-badge">{{ dashboard.requests.cache_hits }}</span></td></tr>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="panel">
+        <h2>Popular Queries</h2>
+        <div class="bar-list">
+          {% set max_query = dashboard.top_queries[0].count if dashboard.top_queries else 1 %}
+          {% if dashboard.top_queries %}
+            {% for item in dashboard.top_queries %}
+              <div class="bar-row">
+                <div class="topline"><span>{{ item.label }}</span><span>{{ item.count }}</span></div>
+                <div class="bar-track"><div class="bar-fill" style="width: {{ (item.count / max_query * 100) if max_query else 0 }}%"></div></div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <p class="muted">No query traffic yet.</p>
+          {% endif %}
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Usage Breakdown</h2>
+        <table>
+          <tr><th>Status codes</th><td>{% for item in dashboard.top_status_codes %}<div>{{ item.label }}: {{ item.count }}</div>{% endfor %}</td></tr>
+          <tr><th>Sort modes</th><td>{% for item in dashboard.top_sorts %}<div>{{ item.label }}: {{ item.count }}</div>{% endfor %}</td></tr>
+          <tr><th>Bucket modes</th><td>{% for item in dashboard.top_buckets %}<div>{{ item.label }}: {{ item.count }}</div>{% endfor %}</td></tr>
+          <tr><th>Logs</th><td class="muted">{% for path in dashboard.log_files %}<div>{{ path }}</div>{% endfor %}</td></tr>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="panel">
+        <h2>Recent Requests</h2>
+        <div class="recent-grid">
+          {% for item in dashboard.recent_requests %}
+            <div class="recent-item">
+              <div class="meta">
+                <span>{{ item.timestamp }}</span>
+                <span>{{ item.endpoint }}</span>
+                <span>Status {{ item.status }}</span>
+                <span>{{ item.latency }} ms</span>
+                <span>cached={{ item.cached }}</span>
+              </div>
+              <div class="query">{{ item.query or 'n/a' }}</div>
+              <div class="sub">sort={{ item.sort or 'n/a' }}, bucket={{ item.bucket or 'n/a' }}</div>
+            </div>
+          {% else %}
+            <p class="muted">No logs detected yet. Use the search or export endpoints to populate analytics.</p>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
