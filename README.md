@@ -1,126 +1,148 @@
 # Web Crawler and Search Tool
 
-[中文](#中文说明) | [日本語](#日本語) | [English](#english)
+Lightweight Python crawler + inverted index search project with both CLI and Web UI entry points.
 
-## 中文说明
+## Features
 
-这是一个基于 Python 的课程项目，功能包括：
+- Crawl `https://quotes.toscrape.com`
+- Build and load an inverted index from JSON
+- Search by single word or phrase
+- Provide ranked results based on occurrence and simple link-based score
+- Support both terminal workflow and browser workflow
 
-- 抓取 `https://quotes.toscrape.com`
-- 提取页面文本并构建倒排索引
-- 支持单词查询与短语查询
-- 使用简单的链接数评分对结果进行排序
-
-### 项目结构
-
-- `search.py`：主程序，支持交互模式和命令行模式
-- `invert_index.json`：已生成的示例倒排索引，可直接用于演示
-- `requirements.txt`：运行依赖
-
-### 快速开始
+## Quick Start
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -r requirements.txt
+```
+
+### 1. CLI Mode
+
+```powershell
 .\.venv\Scripts\python .\search.py load
 .\.venv\Scripts\python .\search.py print quotes
 .\.venv\Scripts\python .\search.py find life is beautiful
 ```
 
-### 交互模式
+Standard module entry is also available:
+
+```powershell
+.\.venv\Scripts\python -m web_crawling load
+```
+
+### 2. Interactive Mode
 
 ```powershell
 .\.venv\Scripts\python .\search.py interactive
 ```
 
-支持命令：`build`、`load`、`print <word>`、`find <phrase>`、`exit`
+Commands: `build`, `load`, `print <word>`, `find <phrase>`, `exit`
 
-### 重新抓取并构建索引
+### 3. Web UI Mode
+
+```powershell
+.\.venv\Scripts\python .\search.py web
+```
+
+Then open `http://127.0.0.1:8000`.
+
+Optional:
+
+```powershell
+.\.venv\Scripts\python .\search.py web --host 0.0.0.0 --port 8080
+```
+
+### 4. JSON API Mode (via web server)
+
+After starting web mode, query JSON API directly:
+
+```powershell
+curl "http://127.0.0.1:8000/api/search?q=life%20is%20beautiful"
+```
+
+With pagination:
+
+```powershell
+curl "http://127.0.0.1:8000/api/search?q=life%20is%20beautiful&page=1&limit=20"
+```
+
+With sorting:
+
+```powershell
+curl "http://127.0.0.1:8000/api/search?q=life%20is%20beautiful&sort=score_desc"
+```
+
+Notes:
+
+- `page` defaults to `1`
+- `limit` defaults to `20` and max is `200`
+- `sort` supports `relevance`, `frequency_desc`, `score_desc`, `page_asc`, `page_desc`
+- response meta includes `cached` and `took_ms`
+- API access logs are written to `logs/access.log`
+
+Health check:
+
+```powershell
+curl "http://127.0.0.1:8000/health"
+```
+
+Export result files:
+
+```powershell
+curl "http://127.0.0.1:8000/api/export?q=life%20is%20beautiful&format=json" -o search_results.json
+curl "http://127.0.0.1:8000/api/export?q=life%20is%20beautiful&format=csv" -o search_results.csv
+```
+
+Export also accepts `page` and `limit`.
+For export, `limit` max is `100` to prevent overly large downloads.
+
+## Rebuild Index
 
 ```powershell
 .\.venv\Scripts\python .\search.py build --politeness-interval 1
 ```
 
-说明：仓库默认保留了一份 `invert_index.json`，这样无需重新抓取即可直接运行演示。
+The repository includes a prebuilt `invert_index.json` so you can run demos without recrawling.
 
-## 日本語
-
-これは Python で書かれた授業課題ベースの小規模プロジェクトで、以下を行います。
-
-- `https://quotes.toscrape.com` のクロール
-- ページ本文の抽出と転置インデックスの作成
-- 単語検索とフレーズ検索
-- 外部リンク数を使った簡易ランキング
-
-### ファイル構成
-
-- `search.py`: メインスクリプト。対話モードと CLI モードの両方を提供
-- `invert_index.json`: すぐ試せるサンプルインデックス
-- `requirements.txt`: 必要な Python パッケージ
-
-### セットアップ
+## Testing
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python -m pip install -r requirements.txt
-.\.venv\Scripts\python .\search.py load
-.\.venv\Scripts\python .\search.py print quotes
-.\.venv\Scripts\python .\search.py find life is beautiful
+.\.venv\Scripts\python -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python -m pytest -q
 ```
 
-### 対話モード
+## Repository Layout
 
-```powershell
-.\.venv\Scripts\python .\search.py interactive
-```
-
-利用可能なコマンドは `build`、`load`、`print <word>`、`find <phrase>`、`exit` です。
-
-### インデックス再生成
-
-```powershell
-.\.venv\Scripts\python .\search.py build --politeness-interval 1
-```
-
-補足：デモをすぐに実行できるよう、生成済みの `invert_index.json` を同梱しています。
-
-## English
-
-This repository contains a small Python coursework project that:
-
-- crawls `https://quotes.toscrape.com`
-- extracts page text and builds an inverted index
-- supports single-word and phrase queries
-- applies a simple link-count-based ranking score
-
-### Repository Layout
-
-- `search.py`: main entry point with both interactive and CLI workflows
-- `invert_index.json`: prebuilt sample index for quick demos
+- `search.py`: backward-compatible shim entry (`python search.py ...`)
+- `web_crawling/core.py`: crawling, indexing, ranking, and query logic
+- `web_crawling/cli.py`: CLI parsing and command routing
+- `web_crawling/webui.py`: Flask UI and JSON API endpoints
+- `web_crawling/templates/search.html`: UI template file
+- `web_crawling/__main__.py`: module entry (`python -m web_crawling ...`)
+- `invert_index.json`: sample prebuilt inverted index
+- `pyproject.toml`: package metadata and script entry
 - `requirements.txt`: Python dependencies
+- `CHANGELOG.md`: notable changes
+- `CONTRIBUTING.md`: contribution guide
+- `CODE_OF_CONDUCT.md`: community behavior standards
+- `SECURITY.md`: vulnerability reporting process
+- `LICENSE`: open source license
+- `requirements-dev.txt`: developer/test dependencies
+- `tests/`: basic regression tests
+- `.github/workflows/ci.yml`: GitHub Actions CI
 
-### Quick Start
+## Open Source Files
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python -m pip install -r requirements.txt
-.\.venv\Scripts\python .\search.py load
-.\.venv\Scripts\python .\search.py print quotes
-.\.venv\Scripts\python .\search.py find life is beautiful
-```
+This project includes standard community files to make collaboration easier:
 
-### Interactive Mode
+- License: MIT (`LICENSE`)
+- Contribution guide (`CONTRIBUTING.md`)
+- Code of conduct (`CODE_OF_CONDUCT.md`)
+- Security policy (`SECURITY.md`)
+- Issue templates (`.github/ISSUE_TEMPLATE/`)
+- Pull request template (`.github/pull_request_template.md`)
 
-```powershell
-.\.venv\Scripts\python .\search.py interactive
-```
+## Contributing
 
-Available commands: `build`, `load`, `print <word>`, `find <phrase>`, `exit`
-
-### Rebuild the Index
-
-```powershell
-.\.venv\Scripts\python .\search.py build --politeness-interval 1
-```
-
-The repository intentionally keeps a generated `invert_index.json` so the project can be demonstrated without recrawling the site first.
+Contributions are welcome. Please read `CONTRIBUTING.md` before opening pull requests.
