@@ -5,8 +5,7 @@ lives inside the web_crawling package.
 """
 
 from web_crawling.cli import main
-from web_crawling.core import search_query
-
+from web_crawling.core import search_query as search_query
 
 if __name__ == '__main__':
     main()

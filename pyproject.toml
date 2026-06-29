@@ -21,7 +21,10 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-  "pytest==8.3.2"
+  "build==1.2.2.post1",
+  "coverage==7.6.1",
+  "pytest==8.3.2",
+  "ruff==0.6.9"
 ]
 
 [project.scripts]
@@ -40,3 +43,21 @@ web_crawling = ["templates/*.html", "static/*.css"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-q"
+
+[tool.coverage.run]
+source = ["web_crawling", "search"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 45
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]
