@@ -245,3 +245,41 @@ def test_api_crawl_report_returns_json_when_present(tmp_path):
     payload = response.get_json()
     assert payload['crawl_stats']['pages_crawled'] == 10
     assert payload['index_stats']['unique_terms'] == 123
+
+
+def test_api_performance_history_returns_payload(tmp_path):
+    perf_file = tmp_path / 'perf_history.jsonl'
+    perf_file.write_text('{"timestamp":"2026-06-29 10:00:00","metrics":{"avg_ms":1.23}}\n', encoding='utf-8')
+    app = create_app(index_data=_sample_index(), perf_history_path=str(perf_file))
+    client = app.test_client()
+
+    response = client.get('/api/performance/history')
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload['path'] == str(perf_file)
+    assert len(payload['history']) == 1
+    assert payload['history'][0]['metrics']['avg_ms'] == 1.23
+
+
+def test_portfolio_page_renders(tmp_path):
+    report_path = tmp_path / 'crawl_report.json'
+    report_path.write_text(
+        '{"crawl_stats":{"pages_crawled":9,"pages_failed":0,"base_url":"https://example.com","duration_seconds":1.2},"index_stats":{"unique_terms":123,"total_tokens":456},"top_terms":[{"term":"hello","total_frequency":9}]}',
+        encoding='utf-8',
+    )
+    perf_file = tmp_path / 'perf_history.jsonl'
+    perf_file.write_text(
+        '{"timestamp":"2026-06-29 10:00:00","metrics":{"avg_ms":1.23,"p95_ms":2.34,"qps":120,"operations":7},"regression_detected":false}\n',
+        encoding='utf-8',
+    )
+
+    app = create_app(index_data=_sample_index(), crawl_report_path=str(report_path), perf_history_path=str(perf_file))
+    client = app.test_client()
+
+    response = client.get('/portfolio')
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert 'Python Crawler Portfolio Storyboard' in html
+    assert 'Performance Trend' in html

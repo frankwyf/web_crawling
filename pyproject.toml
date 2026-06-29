@@ -15,6 +15,7 @@ authors = [
 dependencies = [
   "beautifulsoup4==4.12.3",
   "Flask==3.0.3",
+  "httpx==0.27.2",
   "requests==2.32.3",
   "tqdm==4.66.4"
 ]
@@ -44,6 +45,12 @@ web_crawling = ["templates/*.html", "static/*.css"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+filterwarnings = [
+  "ignore:ast.Str is deprecated.*:DeprecationWarning",
+  "ignore:Constant.__init__ got an unexpected keyword argument.*:DeprecationWarning",
+  "ignore:Attribute s is deprecated.*:DeprecationWarning",
+  "ignore:Constant.__init__ missing 1 required positional argument.*:DeprecationWarning"
+]
 
 [tool.coverage.run]
 source = ["web_crawling", "search"]
@@ -52,7 +59,7 @@ branch = true
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
-fail_under = 45
+fail_under = 65
 
 [tool.ruff]
 line-length = 120
