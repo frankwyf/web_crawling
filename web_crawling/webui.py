@@ -3,7 +3,6 @@ import io
 import json
 import math
 import re
-import statistics
 import shlex
 import time
 from collections import Counter, OrderedDict
@@ -22,6 +21,7 @@ _SUPPORTED_BUCKETS = {'all', 'conjunctive', 'term_at_a_time', 'per_word'}
 _EXPORT_LIMIT_MAX = 100
 _DEFAULT_LIMIT = 20
 _LOG_LINE_PREFIX = re.compile(r'^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+(?P<rest>.*)$')
+_DEFAULT_CRAWL_REPORT_PATH = 'crawl_report.json'
 
 
 def _normalize_query(query):
@@ -451,6 +451,18 @@ def _build_dashboard_payload(log_path):
     }
 
 
+def _load_crawl_report(crawl_report_path):
+    if not crawl_report_path:
+        return None
+    report_file = Path(crawl_report_path)
+    if not report_file.exists():
+        return None
+    try:
+        return json.loads(report_file.read_text(encoding='utf-8'))
+    except json.JSONDecodeError:
+        return None
+
+
 def _write_access_log(log_path, endpoint, status_code, took_ms, cached):
     if not log_path:
         return
@@ -473,9 +485,10 @@ def _write_access_log(log_path, endpoint, status_code, took_ms, cached):
         f.write(line + '\n')
 
 
-def create_app(index_path=None, index_data=None, log_file_path='logs/access_{date}.log'):
+def create_app(index_path=None, index_data=None, log_file_path='logs/access_{date}.log', crawl_report_path=_DEFAULT_CRAWL_REPORT_PATH):
     app = Flask(__name__, template_folder='templates')
     app.config['LOG_FILE_PATH'] = log_file_path
+    app.config['CRAWL_REPORT_PATH'] = crawl_report_path
 
     if index_data is not None:
         _SEARCH_CACHE.clear()
@@ -549,7 +562,16 @@ def create_app(index_path=None, index_data=None, log_file_path='logs/access_{dat
 
     @app.get('/api/insights')
     def api_insights():
-        return jsonify(_build_dashboard_payload(app.config.get('LOG_FILE_PATH')))
+        payload = _build_dashboard_payload(app.config.get('LOG_FILE_PATH'))
+        payload['crawl_report'] = _load_crawl_report(app.config.get('CRAWL_REPORT_PATH'))
+        return jsonify(payload)
+
+    @app.get('/api/crawl/report')
+    def api_crawl_report():
+        report = _load_crawl_report(app.config.get('CRAWL_REPORT_PATH'))
+        if report is None:
+            return jsonify({'error': 'crawl report not found', 'path': app.config.get('CRAWL_REPORT_PATH')}), 404
+        return jsonify(report)
 
     @app.get('/api/insights/export')
     def api_insights_export():
@@ -583,7 +605,9 @@ def create_app(index_path=None, index_data=None, log_file_path='logs/access_{dat
 
     @app.get('/dashboard')
     def dashboard():
-        return render_template('dashboard.html', dashboard=_build_dashboard_payload(app.config.get('LOG_FILE_PATH')))
+        payload = _build_dashboard_payload(app.config.get('LOG_FILE_PATH'))
+        payload['crawl_report'] = _load_crawl_report(app.config.get('CRAWL_REPORT_PATH'))
+        return render_template('dashboard.html', dashboard=payload)
 
     @app.get('/api/search')
     def api_search():

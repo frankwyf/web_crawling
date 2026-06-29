@@ -17,6 +17,7 @@
       <div class="links">
         <a href="/">Back to Search</a>
         <a href="/api/insights" target="_blank" rel="noreferrer">View JSON Insights</a>
+        <a href="/api/crawl/report" target="_blank" rel="noreferrer">View Crawl Report</a>
         <a href="/api/insights/export?format=json" target="_blank" rel="noreferrer">Export JSON Report</a>
         <a href="/api/insights/export?format=csv" target="_blank" rel="noreferrer">Export CSV Report</a>
       </div>
@@ -46,6 +47,21 @@
     </section>
 
     <section class="section">
+      <div class="panel">
+        <h2>Crawl Quality Snapshot</h2>
+        {% if dashboard.crawl_report %}
+          <table class="stats-table">
+            <tr><th>Crawl Started</th><td>{{ dashboard.crawl_report.crawl_stats.started_at }}</td></tr>
+            <tr><th>Crawl Ended</th><td>{{ dashboard.crawl_report.crawl_stats.finished_at }}</td></tr>
+            <tr><th>Pages Crawled</th><td>{{ dashboard.crawl_report.crawl_stats.pages_crawled }}</td></tr>
+            <tr><th>Failed Pages</th><td>{{ dashboard.crawl_report.crawl_stats.pages_failed }}</td></tr>
+            <tr><th>Unique Terms</th><td>{{ dashboard.crawl_report.index_stats.unique_terms }}</td></tr>
+            <tr><th>Total Tokens</th><td>{{ dashboard.crawl_report.index_stats.total_tokens }}</td></tr>
+          </table>
+        {% else %}
+          <p class="muted">No crawl report found. Run the build command to generate one.</p>
+        {% endif %}
+      </div>
       <div class="panel">
         <h2>Request Mix</h2>
         <div class="bar-list">

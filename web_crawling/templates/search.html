@@ -40,6 +40,7 @@
     {% if query %}
     <div class="toolbar">
       <a class="tool-link" href="/dashboard" target="_blank" rel="noreferrer">Dashboard</a>
+      <a class="tool-link" href="/api/crawl/report" target="_blank" rel="noreferrer">Crawl Report</a>
       <a class="tool-link" href="/api/search?q={{ query|urlencode }}&page={{ view_meta.page }}&limit={{ view_meta.limit }}&sort={{ view_meta.sort }}&bucket={{ view_meta.bucket }}" target="_blank" rel="noreferrer">View JSON</a>
       <a class="tool-link" href="/api/export?q={{ query|urlencode }}&format=json&page={{ view_meta.page }}&limit={{ view_meta.limit }}&sort={{ view_meta.sort }}&bucket={{ view_meta.bucket }}" target="_blank" rel="noreferrer">Export JSON</a>
       <a class="tool-link" href="/api/export?q={{ query|urlencode }}&format=csv&page={{ view_meta.page }}&limit={{ view_meta.limit }}&sort={{ view_meta.sort }}&bucket={{ view_meta.bucket }}" target="_blank" rel="noreferrer">Export CSV</a>

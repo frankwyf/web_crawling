@@ -217,3 +217,31 @@ def test_insights_export_rejects_invalid_format():
 
     assert response.status_code == 400
     assert response.get_json()['error'] == 'format must be json or csv'
+
+
+def test_api_crawl_report_returns_404_without_report(tmp_path):
+    app = create_app(index_data=_sample_index(), crawl_report_path=str(tmp_path / 'missing_report.json'))
+    client = app.test_client()
+
+    response = client.get('/api/crawl/report')
+
+    assert response.status_code == 404
+    payload = response.get_json()
+    assert payload['error'] == 'crawl report not found'
+
+
+def test_api_crawl_report_returns_json_when_present(tmp_path):
+    report_path = tmp_path / 'crawl_report.json'
+    report_path.write_text(
+        '{"crawl_stats":{"pages_crawled":10,"pages_failed":0,"started_at":"a","finished_at":"b"},"index_stats":{"unique_terms":123,"total_tokens":456}}',
+        encoding='utf-8',
+    )
+    app = create_app(index_data=_sample_index(), crawl_report_path=str(report_path))
+    client = app.test_client()
+
+    response = client.get('/api/crawl/report')
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload['crawl_stats']['pages_crawled'] == 10
+    assert payload['index_stats']['unique_terms'] == 123

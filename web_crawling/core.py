@@ -2,10 +2,16 @@ import json
 import os
 import re
 import time
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Optional
+from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
+from requests.adapters import HTTPAdapter
 from tqdm import tqdm
+from urllib3.util import Retry
 
 RED_COLOR = '\033[91m'
 BLUE_COLOR = '\033[94m'
@@ -17,19 +23,112 @@ END_COLOR = '\033[0m'
 DEFAULT_BASE_URL = 'https://quotes.toscrape.com'
 DEFAULT_POLITENESS_INTERVAL = 1.0
 DEFAULT_INDEX_FILE = 'invert_index.json'
+DEFAULT_CRAWL_REPORT_FILE = 'crawl_report.json'
 DEFAULT_WEB_HOST = '127.0.0.1'
 DEFAULT_WEB_PORT = 8000
 REQUEST_TIMEOUT = 15
+CONNECT_TIMEOUT = 5
 REQUEST_HEADERS = {
     'User-Agent': 'PortfolioWebCrawler/1.0 (+https://quotes.toscrape.com)'
 }
+MAX_RETRIES = 3
+RETRY_STATUS_CODES = (429, 500, 502, 503, 504)
 
 index = {}
 
 
-def fetch_page(url, politeness_interval):
+@dataclass
+class CrawlStats:
+    started_at: str
+    finished_at: str
+    base_url: str
+    pages_crawled: int
+    pages_failed: int
+    total_tokens: int
+    unique_tokens: int
+    avg_tokens_per_page: float
+    discovered_links: int
+    sitemap_seeds: int
+    duration_seconds: float
+
+
+LAST_CRAWL_STATS: Optional[CrawlStats] = None
+
+
+def _build_session():
+    session = requests.Session()
+    retry = Retry(
+        total=MAX_RETRIES,
+        connect=MAX_RETRIES,
+        read=MAX_RETRIES,
+        backoff_factor=0.4,
+        status_forcelist=RETRY_STATUS_CODES,
+        allowed_methods={'GET', 'HEAD'},
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    session.headers.update(REQUEST_HEADERS)
+    return session
+
+
+def _normalize_url(base_url, href):
+    if not href:
+        return None
+    if href.startswith('#'):
+        return None
+    normalized = urljoin(base_url, href)
+    parsed = urlparse(normalized)
+    if parsed.scheme not in {'http', 'https'}:
+        return None
+    clean_path = parsed.path or '/'
+    clean = f'{parsed.scheme}://{parsed.netloc}{clean_path}'
+    return clean.rstrip('/') or clean
+
+
+def _is_same_site(base_url, candidate):
+    return urlparse(base_url).netloc == urlparse(candidate).netloc
+
+
+def _extract_internal_links(html_content, current_url, base_url):
+    soup = BeautifulSoup(html_content, 'html.parser')
+    links = set()
+    for anchor in soup.find_all('a', href=True):
+        normalized = _normalize_url(current_url, anchor['href'])
+        if not normalized:
+            continue
+        if _is_same_site(base_url, normalized):
+            links.add(normalized)
+    return links
+
+
+def _sitemap_candidates(base_url, session):
+    sitemap_url = _normalize_url(base_url, '/sitemap.xml')
+    if not sitemap_url:
+        return set()
+
     try:
-        response = requests.get(url, headers=REQUEST_HEADERS, timeout=REQUEST_TIMEOUT)
+        response = session.get(sitemap_url, timeout=(CONNECT_TIMEOUT, REQUEST_TIMEOUT))
+        if response.status_code >= 400:
+            return set()
+        soup = BeautifulSoup(response.text, 'xml')
+        urls = set()
+        for loc in soup.find_all('loc'):
+            if not loc.text:
+                continue
+            normalized = _normalize_url(base_url, loc.text.strip())
+            if normalized and _is_same_site(base_url, normalized):
+                urls.add(normalized)
+        return urls
+    except requests.RequestException:
+        return set()
+
+
+def fetch_page(url, politeness_interval, session=None):
+    http = session or _build_session()
+    try:
+        response = http.get(url, timeout=(CONNECT_TIMEOUT, REQUEST_TIMEOUT))
         response.raise_for_status()
         time.sleep(politeness_interval)
     except requests.RequestException as e:
@@ -103,63 +202,96 @@ def extract_text(html_content):
     return list(words), len(outwards_links)
 
 
-def crawl_website(base_url, politeness_interval):
+def crawl_website(base_url, politeness_interval, max_pages=150, include_sitemap=True):
+    global LAST_CRAWL_STATS
+
     pages = []
     page_urls = []
     page_links = []
     seen_urls = set()
-    page_url = base_url
+    failed_urls = set()
+    pending_urls = []
+    total_discovered_links = 0
+    started_at = time.perf_counter()
+    started_stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    session = _build_session()
 
     def append_page(target_url):
+        nonlocal total_discovered_links
         if target_url in seen_urls:
             return None
 
-        html_content = fetch_page(target_url, politeness_interval)
+        html_content = fetch_page(target_url, politeness_interval, session=session)
         if not html_content:
+            failed_urls.add(target_url)
             return None
 
         words, links = extract_text(html_content)
-        if target_url.endswith('/login'):
+        if target_url.endswith('/login') or '/login/' in target_url:
             words.append('login')
 
         pages.append(words)
         page_urls.append(target_url)
         page_links.append(links)
         seen_urls.add(target_url)
+
+        internal_links = _extract_internal_links(html_content, target_url, base_url)
+        total_discovered_links += len(internal_links)
+        for item in sorted(internal_links):
+            if item not in seen_urls:
+                pending_urls.append(item)
         return html_content
 
-    with tqdm(desc='Crawling Pages', dynamic_ncols=True) as pbar:
-        append_page(base_url + '/login')
+    seed_url = _normalize_url(base_url, base_url) or base_url.rstrip('/')
+    login_url = _normalize_url(base_url, '/login')
+    if login_url:
+        pending_urls.append(login_url)
+    pending_urls.append(seed_url)
 
-        while page_url:
+    if include_sitemap:
+        for item in sorted(_sitemap_candidates(base_url, session)):
+            pending_urls.append(item)
+
+    deduped_queue = []
+    seen_pending = set()
+    for item in pending_urls:
+        if item and item not in seen_pending:
+            deduped_queue.append(item)
+            seen_pending.add(item)
+    pending_urls = deduped_queue
+
+    sitemap_seed_count = max(len(pending_urls) - 2, 0)
+
+    with tqdm(desc='Crawling Pages', dynamic_ncols=True) as pbar:
+        while pending_urls and len(pages) < max_pages:
+            page_url = pending_urls.pop(0)
             html_content = append_page(page_url)
             if not html_content:
-                break
-
+                continue
             pbar.update(1)
             pbar.set_postfix_str(f"Pages Crawled: {len(pages)}")
 
-            soup = BeautifulSoup(html_content, 'html.parser')
+    finished_stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    duration_seconds = round(time.perf_counter() - started_at, 3)
+    total_tokens = sum(len(page) for page in pages)
+    unique_tokens = len({token for page in pages for token in page}) if pages else 0
+    avg_tokens = round(total_tokens / len(pages), 3) if pages else 0.0
 
-            span_tags = soup.find_all('span')
-            for span in span_tags:
-                quote_a_tags = span.find_all('a', href=True)
-                for anchor in quote_a_tags:
-                    span_url = base_url + anchor['href']
-                    if append_page(span_url):
-                        pbar.update(1)
+    LAST_CRAWL_STATS = CrawlStats(
+        started_at=started_stamp,
+        finished_at=finished_stamp,
+        base_url=base_url,
+        pages_crawled=len(pages),
+        pages_failed=len(failed_urls),
+        total_tokens=total_tokens,
+        unique_tokens=unique_tokens,
+        avg_tokens_per_page=avg_tokens,
+        discovered_links=total_discovered_links,
+        sitemap_seeds=sitemap_seed_count,
+        duration_seconds=duration_seconds,
+    )
 
-            quote_tags = soup.find_all('div', class_='tags')
-            for quote in quote_tags:
-                side_a_tags = quote.find_all('a', href=True)
-                for anchor in side_a_tags:
-                    quote_url = base_url + anchor['href']
-                    if append_page(quote_url):
-                        pbar.update(1)
-
-            next_page_link = soup.find('li', class_='next')
-            page_url = base_url + next_page_link.a['href'] if next_page_link else None
-
+    session.close()
     return pages, page_urls, page_links
 
 
@@ -417,3 +549,58 @@ def ensure_index_loaded(index_path):
         if not os.path.exists(index_path):
             raise FileNotFoundError(f"Index file not found: {index_path}")
         load_index_json(index_path)
+
+
+def get_last_crawl_stats():
+    if LAST_CRAWL_STATS is None:
+        return None
+    return {
+        'started_at': LAST_CRAWL_STATS.started_at,
+        'finished_at': LAST_CRAWL_STATS.finished_at,
+        'base_url': LAST_CRAWL_STATS.base_url,
+        'pages_crawled': LAST_CRAWL_STATS.pages_crawled,
+        'pages_failed': LAST_CRAWL_STATS.pages_failed,
+        'total_tokens': LAST_CRAWL_STATS.total_tokens,
+        'unique_tokens': LAST_CRAWL_STATS.unique_tokens,
+        'avg_tokens_per_page': LAST_CRAWL_STATS.avg_tokens_per_page,
+        'discovered_links': LAST_CRAWL_STATS.discovered_links,
+        'sitemap_seeds': LAST_CRAWL_STATS.sitemap_seeds,
+        'duration_seconds': LAST_CRAWL_STATS.duration_seconds,
+    }
+
+
+def generate_crawl_report(report_path, pages, page_urls, page_links, index_data, crawl_stats):
+    top_terms = []
+    for term, postings in index_data.items():
+        total_frequency = sum(item.get('Frequency', 0) for item in postings)
+        top_terms.append({'term': term, 'total_frequency': total_frequency})
+    top_terms = sorted(top_terms, key=lambda x: (-x['total_frequency'], x['term']))[:30]
+
+    page_summaries = []
+    for idx, url in enumerate(page_urls):
+        page_summaries.append(
+            {
+                'page': idx,
+                'url': url,
+                'token_count': len(pages[idx]),
+                'outgoing_links': page_links[idx],
+            }
+        )
+
+    page_summaries = sorted(page_summaries, key=lambda x: (-x['token_count'], -x['outgoing_links']))[:20]
+
+    report = {
+        'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'crawl_stats': crawl_stats,
+        'index_stats': {
+            'unique_terms': len(index_data),
+            'total_pages': len(page_urls),
+            'total_tokens': sum(len(doc) for doc in pages),
+        },
+        'top_terms': top_terms,
+        'top_pages': page_summaries,
+    }
+
+    with open(report_path, 'w', encoding='utf-8') as f:
+        json.dump(report, f, ensure_ascii=False, indent=2)
+    return report
