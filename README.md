@@ -30,6 +30,15 @@ For development:
 .\.venv\Scripts\python -m pip install -r requirements-dev.txt
 ```
 
+## Python Version Mapping
+
+This project targets `>=3.10` and is validated on `3.10`, `3.11`, and `3.12`.
+
+- CI mapping: GitHub Actions matrix in `.github/workflows/ci.yml`.
+- Local mapping: `tox.ini` defines `py310`, `py311`, `py312`, and `lint` environments.
+
+If you use `pyenv-win`, install the mapped versions first so `tox` can run all environments.
+
 ## Run
 
 CLI and module entry points are equivalent:
@@ -102,6 +111,14 @@ This provides a visual checkpoint for crawl quality and search-system health.
 ```powershell
 .\.venv\Scripts\python -m pytest -q
 ```
+
+Multi-version local test run (recommended):
+
+```powershell
+.\.venv\Scripts\python -m tox -e py310,py311,py312,lint
+```
+
+If some interpreters are missing locally, `tox` is configured to skip those environments while still running available ones.
 
 Lint and coverage checks:
 
