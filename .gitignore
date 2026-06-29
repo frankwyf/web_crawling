@@ -8,3 +8,4 @@ coverage/
 logs/
 crawl_report.json
 *.egg-info/
+dist/
