@@ -1,3 +1,5 @@
+﻿@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap');
+
 :root {
   --bg-1: #f1f6ff;
   --bg-2: #fff7eb;
@@ -19,8 +21,15 @@ body {
   min-height: 100vh;
   padding: 24px;
   color: var(--ink);
-  font-family: "Segoe UI", "Noto Sans", sans-serif;
+  font-family: "Space Grotesk", "Noto Sans", sans-serif;
   background: radial-gradient(circle at 20% 10%, #ffffff 0%, var(--bg-1) 45%, var(--bg-2) 100%);
+}
+
+.portfolio-body {
+  background:
+    radial-gradient(circle at 82% 8%, rgba(59, 130, 246, 0.22), transparent 35%),
+    radial-gradient(circle at 18% 32%, rgba(217, 119, 6, 0.2), transparent 40%),
+    linear-gradient(165deg, #f6fbff 0%, #eef6ff 45%, #fff6e8 100%);
 }
 
 a { color: inherit; }
@@ -36,6 +45,11 @@ a { color: inherit; }
   border-radius: 22px;
   padding: 28px;
   box-shadow: 0 20px 40px rgba(15, 23, 42, 0.22);
+}
+
+.portfolio-hero {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 24px 60px rgba(13, 29, 57, 0.28);
 }
 
 .hero h1 {
@@ -105,6 +119,27 @@ a { color: inherit; }
   padding: 18px;
 }
 
+.portfolio-kpis .card {
+  overflow: hidden;
+  position: relative;
+}
+
+.portfolio-kpis .card::after {
+  content: "";
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  top: -42px;
+  right: -42px;
+  border-radius: 50%;
+  opacity: 0.18;
+}
+
+.accent-cyan::after { background: #0ea5e9; }
+.accent-amber::after { background: #f59e0b; }
+.accent-green::after { background: #10b981; }
+.accent-rose::after { background: #ef4444; }
+
 .card .label {
   color: var(--ink-soft);
   font-size: 13px;
@@ -123,6 +158,10 @@ a { color: inherit; }
   gap: 14px;
   margin-top: 14px;
   overflow: hidden;
+}
+
+.portfolio-section {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .panel h2 {
@@ -163,6 +202,14 @@ a { color: inherit; }
 
 .bar-fill.soft {
   background: linear-gradient(90deg, #38bdf8, var(--accent));
+}
+
+.perf-chart .bar-track {
+  background: linear-gradient(180deg, #e7eefb 0%, #d7e8ff 100%);
+}
+
+.perf-latency {
+  background: linear-gradient(180deg, #0ea5e9, #2563eb);
 }
 
 .mini-chart {
@@ -370,6 +417,7 @@ button {
   padding: 0 24px;
   color: var(--ink-soft);
   font-size: 13px;
+  font-family: "IBM Plex Mono", monospace;
 }
 
 .pager .tool-link {
@@ -389,7 +437,8 @@ button {
 @media (max-width: 900px) {
   .grid,
   .section,
-  form {
+  form,
+  .portfolio-section {
     grid-template-columns: 1fr;
   }
 

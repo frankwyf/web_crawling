@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import re
@@ -12,6 +13,11 @@ from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from tqdm import tqdm
 from urllib3.util import Retry
+
+try:
+    import httpx
+except ImportError:  # pragma: no cover - handled by runtime guard
+    httpx = None
 
 RED_COLOR = '\033[91m'
 BLUE_COLOR = '\033[94m'
@@ -33,6 +39,8 @@ REQUEST_HEADERS = {
 }
 MAX_RETRIES = 3
 RETRY_STATUS_CODES = (429, 500, 502, 503, 504)
+DEFAULT_CRAWL_MODE = 'sync'
+DEFAULT_ASYNC_CONCURRENCY = 8
 
 index = {}
 
@@ -132,6 +140,19 @@ def fetch_page(url, politeness_interval, session=None):
         response.raise_for_status()
         time.sleep(politeness_interval)
     except requests.RequestException as e:
+        print(RED_COLOR + f"Failed to fetch page: {url}" + END_COLOR)
+        print(e)
+        return None
+    return response.text
+
+
+async def fetch_page_async(url, politeness_interval, client):
+    try:
+        response = await client.get(url, timeout=httpx.Timeout(REQUEST_TIMEOUT, connect=CONNECT_TIMEOUT))
+        response.raise_for_status()
+        if politeness_interval > 0:
+            await asyncio.sleep(politeness_interval)
+    except httpx.HTTPError as e:
         print(RED_COLOR + f"Failed to fetch page: {url}" + END_COLOR)
         print(e)
         return None
@@ -293,6 +314,141 @@ def crawl_website(base_url, politeness_interval, max_pages=150, include_sitemap=
 
     session.close()
     return pages, page_urls, page_links
+
+
+async def crawl_website_async(
+    base_url,
+    politeness_interval,
+    max_pages=150,
+    include_sitemap=True,
+    concurrency=DEFAULT_ASYNC_CONCURRENCY,
+):
+    global LAST_CRAWL_STATS
+
+    if httpx is None:
+        raise RuntimeError('Async crawl mode requires httpx. Install it with: pip install httpx')
+    if concurrency < 1:
+        raise ValueError('concurrency must be >= 1')
+
+    pages = []
+    page_urls = []
+    page_links = []
+    seen_urls = set()
+    failed_urls = set()
+    pending_urls = []
+    in_flight = set()
+    total_discovered_links = 0
+    started_at = time.perf_counter()
+    started_stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    seed_url = _normalize_url(base_url, base_url) or base_url.rstrip('/')
+    login_url = _normalize_url(base_url, '/login')
+    if login_url:
+        pending_urls.append(login_url)
+    pending_urls.append(seed_url)
+
+    if include_sitemap:
+        sitemap_session = _build_session()
+        try:
+            for item in sorted(_sitemap_candidates(base_url, sitemap_session)):
+                pending_urls.append(item)
+        finally:
+            sitemap_session.close()
+
+    deduped_queue = []
+    seen_pending = set()
+    for item in pending_urls:
+        if item and item not in seen_pending:
+            deduped_queue.append(item)
+            seen_pending.add(item)
+    pending_urls = deduped_queue
+
+    sitemap_seed_count = max(len(pending_urls) - 2, 0)
+
+    async with httpx.AsyncClient(headers=REQUEST_HEADERS, follow_redirects=True) as client:
+        with tqdm(desc='Crawling Pages (async)', dynamic_ncols=True) as pbar:
+            while pending_urls and len(pages) < max_pages:
+                batch = []
+                while pending_urls and len(batch) < concurrency and len(pages) + len(batch) < max_pages:
+                    candidate = pending_urls.pop(0)
+                    if candidate in seen_urls or candidate in in_flight:
+                        continue
+                    batch.append(candidate)
+                    in_flight.add(candidate)
+
+                if not batch:
+                    continue
+
+                batch_results = await asyncio.gather(
+                    *(fetch_page_async(target, politeness_interval, client) for target in batch)
+                )
+
+                for target_url, html_content in zip(batch, batch_results):
+                    in_flight.discard(target_url)
+                    if not html_content:
+                        failed_urls.add(target_url)
+                        continue
+
+                    words, links = extract_text(html_content)
+                    if target_url.endswith('/login') or '/login/' in target_url:
+                        words.append('login')
+
+                    pages.append(words)
+                    page_urls.append(target_url)
+                    page_links.append(links)
+                    seen_urls.add(target_url)
+
+                    internal_links = _extract_internal_links(html_content, target_url, base_url)
+                    total_discovered_links += len(internal_links)
+                    for item in sorted(internal_links):
+                        if item not in seen_urls and item not in in_flight:
+                            pending_urls.append(item)
+
+                    pbar.update(1)
+                    pbar.set_postfix_str(f"Pages Crawled: {len(pages)}")
+
+    finished_stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    duration_seconds = round(time.perf_counter() - started_at, 3)
+    total_tokens = sum(len(page) for page in pages)
+    unique_tokens = len({token for page in pages for token in page}) if pages else 0
+    avg_tokens = round(total_tokens / len(pages), 3) if pages else 0.0
+
+    LAST_CRAWL_STATS = CrawlStats(
+        started_at=started_stamp,
+        finished_at=finished_stamp,
+        base_url=base_url,
+        pages_crawled=len(pages),
+        pages_failed=len(failed_urls),
+        total_tokens=total_tokens,
+        unique_tokens=unique_tokens,
+        avg_tokens_per_page=avg_tokens,
+        discovered_links=total_discovered_links,
+        sitemap_seeds=sitemap_seed_count,
+        duration_seconds=duration_seconds,
+    )
+
+    return pages, page_urls, page_links
+
+
+def crawl_website_by_mode(
+    base_url,
+    politeness_interval,
+    max_pages=150,
+    include_sitemap=True,
+    crawl_mode=DEFAULT_CRAWL_MODE,
+    concurrency=DEFAULT_ASYNC_CONCURRENCY,
+):
+    if crawl_mode == 'async':
+        return asyncio.run(
+            crawl_website_async(
+                base_url,
+                politeness_interval,
+                max_pages=max_pages,
+                include_sitemap=include_sitemap,
+                concurrency=concurrency,
+            )
+        )
+    return crawl_website(base_url, politeness_interval, max_pages=max_pages, include_sitemap=include_sitemap)
 
 
 def build_index(pages, invert_index_file, page_urls, outward_links):

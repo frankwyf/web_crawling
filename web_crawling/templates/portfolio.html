@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Crawler Portfolio Storyboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}" />
+</head>
+<body class="portfolio-body">
+  <main class="shell">
+    <section class="hero portfolio-hero">
+      <h1>Python Crawler Portfolio Storyboard</h1>
+      <p>
+        This page fuses crawl quality, query quality, and performance trend into one operational narrative.
+        It is designed for demo interviews and project showcases where engineering depth matters.
+      </p>
+      <div class="links">
+        <a href="/">Search UI</a>
+        <a href="/dashboard">Dashboard</a>
+        <a href="/api/crawl/report" target="_blank" rel="noreferrer">Crawl Report API</a>
+        <a href="/api/performance/history" target="_blank" rel="noreferrer">Perf History API</a>
+      </div>
+    </section>
+
+    <section class="grid portfolio-kpis">
+      <div class="card accent-cyan">
+        <div class="label">Index Terms</div>
+        <div class="value">{{ dashboard.index.unique_terms }}</div>
+      </div>
+      <div class="card accent-amber">
+        <div class="label">Search Requests</div>
+        <div class="value">{{ dashboard.requests.search_total }}</div>
+      </div>
+      <div class="card accent-green">
+        <div class="label">Cache Hit Rate</div>
+        <div class="value">{{ dashboard.requests.cache_hit_rate }}%</div>
+      </div>
+      <div class="card accent-rose">
+        <div class="label">Latest Avg Latency</div>
+        <div class="value">
+          {% if perf_history %}
+            {{ perf_history[-1].metrics.avg_ms }} ms
+          {% else %}
+            n/a
+          {% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="section portfolio-section">
+      <div class="panel">
+        <h2>Crawl Quality</h2>
+        {% if crawl_report %}
+          <table class="stats-table">
+            <tr><th>Base URL</th><td>{{ crawl_report.crawl_stats.base_url }}</td></tr>
+            <tr><th>Pages Crawled</th><td>{{ crawl_report.crawl_stats.pages_crawled }}</td></tr>
+            <tr><th>Failed Pages</th><td>{{ crawl_report.crawl_stats.pages_failed }}</td></tr>
+            <tr><th>Unique Terms</th><td>{{ crawl_report.index_stats.unique_terms }}</td></tr>
+            <tr><th>Total Tokens</th><td>{{ crawl_report.index_stats.total_tokens }}</td></tr>
+            <tr><th>Crawl Duration</th><td>{{ crawl_report.crawl_stats.duration_seconds }} s</td></tr>
+          </table>
+        {% else %}
+          <p class="muted">No crawl report yet. Run the build command to generate one.</p>
+        {% endif %}
+      </div>
+      <div class="panel">
+        <h2>Top Terms Density</h2>
+        {% if crawl_report and crawl_report.top_terms %}
+          {% set max_terms = crawl_report.top_terms[0].total_frequency %}
+          <div class="bar-list">
+            {% for item in crawl_report.top_terms[:8] %}
+              <div class="bar-row">
+                <div class="topline"><span>{{ item.term }}</span><span>{{ item.total_frequency }}</span></div>
+                <div class="bar-track"><div class="bar-fill" style="width: {{ (item.total_frequency / max_terms * 100) if max_terms else 0 }}%"></div></div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="muted">No term distribution data available.</p>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="section portfolio-section">
+      <div class="panel">
+        <h2>Query Quality</h2>
+        <table class="stats-table">
+          <tr><th>Unique Queries</th><td>{{ dashboard.engagement.unique_queries }}</td></tr>
+          <tr><th>Top Query Share</th><td>{{ dashboard.engagement.top_query_share }}%</td></tr>
+          <tr><th>Success Rate</th><td>{{ dashboard.requests.success_rate }}%</td></tr>
+          <tr><th>Error Rate</th><td>{{ dashboard.requests.error_rate }}%</td></tr>
+          <tr><th>P95 API Latency</th><td>{{ dashboard.requests.p95_latency_ms }} ms</td></tr>
+        </table>
+      </div>
+      <div class="panel">
+        <h2>Top Queries</h2>
+        {% if dashboard.top_queries %}
+          {% set max_query = dashboard.top_queries[0].count %}
+          <div class="bar-list">
+            {% for item in dashboard.top_queries %}
+              <div class="bar-row">
+                <div class="topline"><span>{{ item.label }}</span><span>{{ item.count }}</span></div>
+                <div class="bar-track"><div class="bar-fill soft" style="width: {{ (item.count / max_query * 100) if max_query else 0 }}%"></div></div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="muted">No search logs yet.</p>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="section portfolio-section">
+      <div class="panel">
+        <h2>Performance Trend</h2>
+        {% if perf_series %}
+          {% set max_avg = (perf_series | map(attribute='avg_ms') | max) %}
+          <div class="mini-chart perf-chart">
+            {% for item in perf_series %}
+              <div class="mini-bar">
+                <div class="bar-track">
+                  <div class="bar-fill perf-latency" style="height: {{ (item.avg_ms / max_avg * 100) if max_avg else 0 }}%"></div>
+                </div>
+                <div class="axis">{{ item.label }}</div>
+                <div class="axis">{{ item.avg_ms }}ms</div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="muted">No benchmark history yet. Run benchmark command to record performance points.</p>
+        {% endif %}
+      </div>
+      <div class="panel">
+        <h2>Latest Benchmark Record</h2>
+        {% if perf_history %}
+          {% set latest = perf_history[-1] %}
+          <table class="stats-table">
+            <tr><th>Timestamp</th><td>{{ latest.timestamp }}</td></tr>
+            <tr><th>Operations</th><td>{{ latest.metrics.operations }}</td></tr>
+            <tr><th>Avg latency</th><td>{{ latest.metrics.avg_ms }} ms</td></tr>
+            <tr><th>P95 latency</th><td>{{ latest.metrics.p95_ms }} ms</td></tr>
+            <tr><th>Throughput</th><td>{{ latest.metrics.qps }} qps</td></tr>
+            <tr><th>Regression</th><td>{{ 'yes' if latest.regression_detected else 'no' }}</td></tr>
+          </table>
+        {% else %}
+          <p class="muted">No benchmark history file found.</p>
+        {% endif %}
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -12,6 +12,7 @@ from urllib.parse import urlencode
 
 from flask import Flask, Response, jsonify, render_template, request
 
+from .benchmark import load_benchmark_history
 from .core import BLUE_COLOR, ensure_index_loaded, index, search_query
 
 _CACHE_MAX_SIZE = 128
@@ -22,6 +23,7 @@ _EXPORT_LIMIT_MAX = 100
 _DEFAULT_LIMIT = 20
 _LOG_LINE_PREFIX = re.compile(r'^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+(?P<rest>.*)$')
 _DEFAULT_CRAWL_REPORT_PATH = 'crawl_report.json'
+_DEFAULT_PERF_HISTORY_PATH = 'logs/perf_history.jsonl'
 
 
 def _normalize_query(query):
@@ -463,6 +465,23 @@ def _load_crawl_report(crawl_report_path):
         return None
 
 
+def _performance_series(perf_history):
+    if not perf_history:
+        return []
+    series = []
+    for item in perf_history[-12:]:
+        metrics = item.get('metrics', {})
+        series.append(
+            {
+                'label': item.get('timestamp', '')[-8:],
+                'avg_ms': metrics.get('avg_ms', 0),
+                'p95_ms': metrics.get('p95_ms', 0),
+                'qps': metrics.get('qps', 0),
+            }
+        )
+    return series
+
+
 def _write_access_log(log_path, endpoint, status_code, took_ms, cached):
     if not log_path:
         return
@@ -485,10 +504,17 @@ def _write_access_log(log_path, endpoint, status_code, took_ms, cached):
         f.write(line + '\n')
 
 
-def create_app(index_path=None, index_data=None, log_file_path='logs/access_{date}.log', crawl_report_path=_DEFAULT_CRAWL_REPORT_PATH):
+def create_app(
+    index_path=None,
+    index_data=None,
+    log_file_path='logs/access_{date}.log',
+    crawl_report_path=_DEFAULT_CRAWL_REPORT_PATH,
+    perf_history_path=_DEFAULT_PERF_HISTORY_PATH,
+):
     app = Flask(__name__, template_folder='templates')
     app.config['LOG_FILE_PATH'] = log_file_path
     app.config['CRAWL_REPORT_PATH'] = crawl_report_path
+    app.config['PERF_HISTORY_PATH'] = perf_history_path
 
     if index_data is not None:
         _SEARCH_CACHE.clear()
@@ -573,6 +599,15 @@ def create_app(index_path=None, index_data=None, log_file_path='logs/access_{dat
             return jsonify({'error': 'crawl report not found', 'path': app.config.get('CRAWL_REPORT_PATH')}), 404
         return jsonify(report)
 
+    @app.get('/api/performance/history')
+    def api_performance_history():
+        return jsonify(
+            {
+                'history': load_benchmark_history(app.config.get('PERF_HISTORY_PATH')),
+                'path': app.config.get('PERF_HISTORY_PATH'),
+            }
+        )
+
     @app.get('/api/insights/export')
     def api_insights_export():
         started = time.perf_counter()
@@ -608,6 +643,19 @@ def create_app(index_path=None, index_data=None, log_file_path='logs/access_{dat
         payload = _build_dashboard_payload(app.config.get('LOG_FILE_PATH'))
         payload['crawl_report'] = _load_crawl_report(app.config.get('CRAWL_REPORT_PATH'))
         return render_template('dashboard.html', dashboard=payload)
+
+    @app.get('/portfolio')
+    def portfolio():
+        dashboard_payload = _build_dashboard_payload(app.config.get('LOG_FILE_PATH'))
+        crawl_report = _load_crawl_report(app.config.get('CRAWL_REPORT_PATH'))
+        perf_history = load_benchmark_history(app.config.get('PERF_HISTORY_PATH'))
+        return render_template(
+            'portfolio.html',
+            dashboard=dashboard_payload,
+            crawl_report=crawl_report,
+            perf_history=perf_history,
+            perf_series=_performance_series(perf_history),
+        )
 
     @app.get('/api/search')
     def api_search():
