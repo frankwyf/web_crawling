@@ -6,4 +6,5 @@ __pycache__/
 coverage/
 .coverage
 logs/
+crawl_report.json
 *.egg-info/

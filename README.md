@@ -7,10 +7,13 @@ Lightweight Python crawler + inverted-index search project with CLI, web UI, JSO
 This project has been upgraded from a basic crawler/search demo into a portfolio-grade Python crawling system:
 
 - Resilient crawling engine with connection pooling and retry backoff.
+- Async crawling mode with configurable concurrency.
 - Internal-link traversal with optional sitemap seeding.
 - Configurable crawl scale using `--max-pages`.
 - Machine-readable crawl report export (`crawl_report.json`).
 - Dashboard-level crawl quality visibility (`/api/crawl/report` + dashboard panel).
+- Replayable benchmark history with regression detection (`logs/perf_history.jsonl`).
+- Portfolio storyboard page combining crawl quality, query quality, and performance trend.
 - Expanded quality pipeline: lint, tests, coverage gate, package build artifacts.
 - Multi-version CI validation across Python 3.10 / 3.11 / 3.12.
 
@@ -39,6 +42,8 @@ CLI and module entry points are equivalent:
 .\.venv\Scripts\python .\search.py interactive
 .\.venv\Scripts\python .\search.py build --politeness-interval 1
 .\.venv\Scripts\python .\search.py build --politeness-interval 1 --max-pages 120 --report-file crawl_report.json
+.\.venv\Scripts\python .\search.py build --crawl-mode async --async-concurrency 8 --max-pages 120
+.\.venv\Scripts\python .\search.py benchmark --index-file invert_index.json --history-file logs/perf_history.jsonl --runs 3
 ```
 
 Web UI:
@@ -48,6 +53,8 @@ Web UI:
 ```
 
 Open `http://127.0.0.1:8000/` for search and `http://127.0.0.1:8000/dashboard` for analytics.
+
+Portfolio visualization page: `http://127.0.0.1:8000/portfolio`
 
 ## Crawling Strategy
 
@@ -68,6 +75,7 @@ After each build, a structured crawl report is generated to summarize quality an
 - Dashboard insights: `/api/insights`
 - Export dashboard report: `/api/insights/export?format=json|csv`
 - Crawl report: `/api/crawl/report`
+- Performance history: `/api/performance/history`
 - Health check: `/health`
 
 Query options:
@@ -85,6 +93,7 @@ The Web UI now supports direct observability and verification links:
 
 - Search page quick links for dashboard, JSON export, CSV export, and crawl report.
 - Dashboard "Crawl Quality Snapshot" panel showing crawl totals and index scale.
+- Portfolio page with three linked views: crawl quality, query quality, and performance trend.
 
 This provides a visual checkpoint for crawl quality and search-system health.
 
@@ -103,6 +112,7 @@ Lint and coverage checks:
 ```
 
 Coverage threshold is enforced in `pyproject.toml` and can be tightened over time as test depth increases.
+Current gate is set to `65%` with branch coverage enabled.
 
 ## CI/CD
 
