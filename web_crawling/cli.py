@@ -4,9 +4,11 @@ import os
 from .benchmark import run_benchmark_suite
 from .core import (
     BLUE_COLOR,
+    CRAWL_PROFILES,
     DEFAULT_ASYNC_CONCURRENCY,
     DEFAULT_BASE_URL,
     DEFAULT_CRAWL_MODE,
+    DEFAULT_CRAWL_PROFILE,
     DEFAULT_CRAWL_REPORT_FILE,
     DEFAULT_INDEX_FILE,
     DEFAULT_POLITENESS_INTERVAL,
@@ -61,6 +63,7 @@ def handle_command(
     report_file=DEFAULT_CRAWL_REPORT_FILE,
     crawl_mode=DEFAULT_CRAWL_MODE,
     async_concurrency=DEFAULT_ASYNC_CONCURRENCY,
+    profile=DEFAULT_CRAWL_PROFILE,
 ):
     if command == 'build':
         pages_content, urls, num_links = crawl_website_by_mode(
@@ -69,6 +72,7 @@ def handle_command(
             max_pages=max_pages,
             crawl_mode=crawl_mode,
             concurrency=async_concurrency,
+            profile=profile,
         )
         index_data = build_index(pages_content, index_path, urls, num_links)
         crawl_stats = get_last_crawl_stats()
@@ -123,7 +127,16 @@ def handle_command(
     print(BLUE_COLOR + 'Available commands: build, load, print, find, exit' + END_COLOR)
 
 
-def interactive_loop(index_path, base_url, politeness_interval, max_pages, report_file, crawl_mode, async_concurrency):
+def interactive_loop(
+    index_path,
+    base_url,
+    politeness_interval,
+    max_pages,
+    report_file,
+    crawl_mode,
+    async_concurrency,
+    profile=DEFAULT_CRAWL_PROFILE,
+):
     print(BLUE_COLOR + '**************************************************' + END_COLOR)
     print('Welcome to Web Crawler and Search Tool')
     print('Available commands: build, load, print, find, exit')
@@ -140,6 +153,7 @@ def interactive_loop(index_path, base_url, politeness_interval, max_pages, repor
             report_file=report_file,
             crawl_mode=crawl_mode,
             async_concurrency=async_concurrency,
+            profile=profile,
         )
         if command == 'exit':
             break
@@ -151,6 +165,12 @@ def parse_args():
     common_args = argparse.ArgumentParser(add_help=False)
     common_args.add_argument('--index-file', default=DEFAULT_INDEX_FILE, help='Path to the inverted index JSON file.')
     common_args.add_argument('--base-url', default=DEFAULT_BASE_URL, help='Website root to crawl.')
+    common_args.add_argument(
+        '--profile',
+        choices=sorted(CRAWL_PROFILES),
+        default=DEFAULT_CRAWL_PROFILE,
+        help='Content extraction and seed behavior profile.',
+    )
     common_args.add_argument(
         '--politeness-interval',
         type=float,
@@ -226,6 +246,7 @@ def main():
                 args.report_file,
                 args.crawl_mode,
                 args.async_concurrency,
+                profile=args.profile,
             )
         elif command == 'build':
             handle_command(
@@ -237,6 +258,7 @@ def main():
                 report_file=args.report_file,
                 crawl_mode=args.crawl_mode,
                 async_concurrency=args.async_concurrency,
+                profile=args.profile,
             )
         elif command == 'load':
             handle_command(
@@ -248,6 +270,7 @@ def main():
                 report_file=args.report_file,
                 crawl_mode=args.crawl_mode,
                 async_concurrency=args.async_concurrency,
+                profile=args.profile,
             )
         elif command == 'print':
             handle_command(
@@ -259,6 +282,7 @@ def main():
                 report_file=args.report_file,
                 crawl_mode=args.crawl_mode,
                 async_concurrency=args.async_concurrency,
+                profile=args.profile,
             )
         elif command == 'find':
             handle_command(
@@ -270,6 +294,7 @@ def main():
                 report_file=args.report_file,
                 crawl_mode=args.crawl_mode,
                 async_concurrency=args.async_concurrency,
+                profile=args.profile,
             )
         elif command == 'web':
             run_web_ui(args.index_file, args.host, args.port)

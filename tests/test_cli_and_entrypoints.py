@@ -8,10 +8,14 @@ def test_handle_command_build_calls_pipeline(monkeypatch, tmp_path):
     index_path = tmp_path / 'index.json'
     called = {}
 
+    def fake_crawl(*args, **kwargs):
+        called['profile'] = kwargs['profile']
+        return [['hello', 'world']], ['https://example.com'], [1]
+
     monkeypatch.setattr(
         cli,
         'crawl_website_by_mode',
-        lambda *args, **kwargs: ([['hello', 'world']], ['https://example.com'], [1]),
+        fake_crawl,
     )
     monkeypatch.setattr(
         cli,
@@ -44,9 +48,27 @@ def test_handle_command_build_calls_pipeline(monkeypatch, tmp_path):
         report_file=str(tmp_path / 'crawl_report.json'),
         crawl_mode='async',
         async_concurrency=3,
+        profile='quotes',
     )
 
     assert called['report_file'].endswith('crawl_report.json')
+    assert called['profile'] == 'quotes'
+
+
+def test_parse_args_defaults_to_generic_profile(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['web-crawling', 'build'])
+
+    args = cli.parse_args()
+
+    assert args.profile == 'generic'
+
+
+def test_parse_args_accepts_quotes_profile(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['web-crawling', 'build', '--profile', 'quotes'])
+
+    args = cli.parse_args()
+
+    assert args.profile == 'quotes'
 
 
 def test_handle_command_load_calls_ensure(monkeypatch):
