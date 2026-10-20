@@ -6,25 +6,25 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  build-release-artifacts:
+  build-and-publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+      - name: Install build tools
+        run: python -m pip install build==1.2.2.post1
       - name: Build package
         run: python -m build
-      - name: Upload release artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-dist
-          path: dist/
-
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "${GITHUB_REF_NAME}" dist/*
+          --verify-tag
+          --title "${GITHUB_REF_NAME}"
+          --generate-notes
