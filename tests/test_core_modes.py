@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -45,16 +46,108 @@ class FakeAsyncRedirectClient:
         )
 
 
-def _run_crawl_mode(mode):
+FIXTURE_DIR = Path(__file__).parent / 'fixtures'
+
+
+def _run_crawl_mode(mode, profile='generic'):
     kwargs = dict(
         base_url='https://example.com',
         politeness_interval=0,
         max_pages=3,
         include_sitemap=False,
+        profile=profile,
     )
     if mode == 'sync':
         return core.crawl_website(**kwargs)
     return asyncio.run(core.crawl_website_async(**kwargs))
+
+
+def test_generic_extractor_indexes_title_and_main_content_only():
+    html = (FIXTURE_DIR / 'generic_page.html').read_text(encoding='utf-8')
+
+    words, link_count = core.extract_text(html)
+
+    assert {'generic', 'document', 'article', 'needleword', 'child'} <= set(words)
+    assert 'scriptsecret' not in words
+    assert 'stylesecret' not in words
+    assert 'navigationsecret' not in words
+    assert 'footersecret' not in words
+    assert link_count == 1
+
+
+def test_generic_extractor_falls_back_to_body_and_removes_non_content():
+    html = '''
+        <html><head><title>Fallback Title</title></head><body>
+            <header><nav>nestedfallbacksecret</nav></header>
+            <script>scriptfallbacksecret</script>
+            <style>.stylefallbacksecret { display: none; }</style>
+            <p>Bodyfallbackword</p>
+            <form>formfallbacksecret</form>
+        </body></html>
+    '''
+
+    words, _ = core.extract_text(html)
+
+    assert {'fallback', 'title', 'bodyfallbackword'} <= set(words)
+    assert 'scriptfallbacksecret' not in words
+    assert 'stylefallbacksecret' not in words
+    assert 'formfallbacksecret' not in words
+    assert 'nestedfallbacksecret' not in words
+
+
+def test_quotes_extractor_remains_available_as_explicit_profile():
+    html = (FIXTURE_DIR / 'quotes_page.html').read_text(encoding='utf-8')
+
+    words, link_count = core.extract_text(html, profile='quotes')
+
+    assert {'sample', 'quote', 'author', 'name', 'tagword'} <= set(words)
+    assert 'genericbodyword' not in words
+    assert link_count == 1
+
+
+def test_profile_seed_sets_include_only_configured_profile_seeds():
+    base_url = 'https://example.com'
+    sitemap_urls = {'https://example.com/a', 'https://example.com'}
+
+    generic_seeds, generic_sitemap_count = core._initial_crawl_urls(base_url, 'generic', sitemap_urls)
+    quotes_seeds, quotes_sitemap_count = core._initial_crawl_urls(base_url, 'quotes', sitemap_urls)
+
+    assert generic_seeds == [base_url, 'https://example.com/a']
+    assert generic_sitemap_count == 1
+    assert quotes_seeds == ['https://example.com/login', base_url, 'https://example.com/a']
+    assert quotes_sitemap_count == 1
+
+
+@pytest.mark.parametrize('mode', ['sync', 'async'])
+def test_generic_profile_starts_at_base_and_does_not_seed_login(monkeypatch, mode):
+    root_url = 'https://example.com'
+    child_url = 'https://example.com/child'
+    root_html = (FIXTURE_DIR / 'generic_page.html').read_text(encoding='utf-8')
+    child_html = '<html><body><article><h1>Child Article</h1><p>childcontent</p></article></body></html>'
+    pages_html = {root_url: root_html, child_url: child_html}
+    requested = []
+
+    def fetch(url, politeness_interval, session=None):
+        requested.append(url)
+        return core._FetchedPage(pages_html[url], url, url) if url in pages_html else None
+
+    async def fetch_async(url, politeness_interval, client):
+        requested.append(url)
+        return core._FetchedPage(pages_html[url], url, url) if url in pages_html else None
+
+    monkeypatch.setattr(core, '_fetch_page_result', fetch)
+    monkeypatch.setattr(core, '_fetch_page_result_async', fetch_async)
+    monkeypatch.setattr(core, '_build_session', lambda: FakeRedirectSession({}))
+    monkeypatch.setattr(core.httpx, 'AsyncClient', lambda **kwargs: FakeAsyncRedirectClient({}))
+
+    pages, urls, _ = _run_crawl_mode(mode)
+
+    assert requested[0] == root_url
+    assert 'https://example.com/login' not in requested
+    assert urls == [root_url, child_url]
+    indexed_words = {word for page in pages for word in page}
+    assert {'generic', 'needleword', 'childcontent'} <= indexed_words
+    assert 'scriptsecret' not in indexed_words
 
 
 def test_url_normalization_and_same_origin_helpers():
@@ -154,7 +247,7 @@ def test_crawler_uses_final_same_origin_redirect_url_for_relative_links(monkeypa
         lambda **kwargs: FakeAsyncRedirectClient(responses),
     )
 
-    _, urls, _ = _run_crawl_mode(mode)
+    _, urls, _ = _run_crawl_mode(mode, profile='quotes')
 
     assert urls == [login_url, redirected_url, child_url]
 
@@ -182,7 +275,7 @@ def test_crawler_rejects_cross_origin_redirects(monkeypatch, mode):
         lambda **kwargs: FakeAsyncRedirectClient(responses),
     )
 
-    _, urls, _ = _run_crawl_mode(mode)
+    _, urls, _ = _run_crawl_mode(mode, profile='quotes')
 
     assert urls == [login_url]
     assert core.LAST_CRAWL_STATS.pages_failed == 1
@@ -223,10 +316,13 @@ def test_crawl_website_by_mode_sync(monkeypatch):
         max_pages=3,
         include_sitemap=False,
         crawl_mode='sync',
+        profile='quotes',
     )
 
     assert len(pages) >= 2
     assert any(url.endswith('/a') for url in urls)
+    assert urls[0].endswith('/login')
+    assert 'login' in pages[0]
     assert len(links) == len(pages)
 
 
@@ -254,10 +350,13 @@ def test_crawl_website_by_mode_async(monkeypatch):
         include_sitemap=False,
         crawl_mode='async',
         concurrency=2,
+        profile='quotes',
     )
 
     assert len(pages) >= 2
     assert any(url.endswith('/a') for url in urls)
+    assert urls[0].endswith('/login')
+    assert 'login' in pages[0]
     assert len(links) == len(pages)
 
 

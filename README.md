@@ -9,6 +9,7 @@ This project has been upgraded from a basic crawler/search demo into a portfolio
 - Resilient crawling engine with connection pooling and retry backoff.
 - Async crawling mode with configurable concurrency.
 - Internal-link traversal with optional sitemap seeding.
+- Generic HTML content extraction by default, with an explicit Quotes to Scrape profile.
 - Configurable crawl scale using `--max-pages`.
 - Machine-readable crawl report export (`crawl_report.json`).
 - Dashboard-level crawl quality visibility (`/api/crawl/report` + dashboard panel).
@@ -72,6 +73,22 @@ Web UI:
 
 ```powershell
 .\.venv\Scripts\python .\search.py web
+```
+
+## Crawl Profiles
+
+The default `generic` profile indexes the document title and the first `<main>` or `<article>` section, falling back to the page body. It removes scripts, styles, navigation, forms, and other non-content sections before tokenizing. It starts at `--base-url` and may also seed same-origin URLs from the sitemap; it does not add a `/login` seed.
+
+Use `--profile quotes` to enable the Quotes to Scrape selectors and its legacy `/login` seed behavior:
+
+```sh
+python -m web_crawling build --base-url https://quotes.toscrape.com --profile quotes --max-pages 120
+```
+
+For another site, the default profile can be used directly:
+
+```sh
+python -m web_crawling build --base-url https://example.org --profile generic --max-pages 120
 ```
 
 Open `http://127.0.0.1:8000/` for search and `http://127.0.0.1:8000/dashboard` for analytics.

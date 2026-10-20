@@ -41,6 +41,8 @@ MAX_RETRIES = 3
 RETRY_STATUS_CODES = (429, 500, 502, 503, 504)
 DEFAULT_CRAWL_MODE = 'sync'
 DEFAULT_ASYNC_CONCURRENCY = 8
+DEFAULT_CRAWL_PROFILE = 'generic'
+CRAWL_PROFILES = {'generic', 'quotes'}
 
 index = {}
 
@@ -218,9 +220,18 @@ async def fetch_page_async(url, politeness_interval, client):
     return result.html if result else None
 
 
-def extract_text(html_content):
-    soup = BeautifulSoup(html_content, 'html.parser')
-    outwards_links = soup.find_all('a', href=True)
+def _tokenize_text(text):
+    processed_text = re.sub(r'(?<=\d),(?=\d)', '', text)
+    words = re.findall(r'\b[\w\d\u4e00-\u9fa5\u3040-\u30ff\u0400-\u04ff]+\b', processed_text.lower())
+    return list(words)
+
+
+def _validate_crawl_profile(profile):
+    if profile not in CRAWL_PROFILES:
+        raise ValueError(f"Unsupported crawl profile: {profile}. Choose from: {', '.join(sorted(CRAWL_PROFILES))}")
+
+
+def _extract_quotes_text(soup):
     short_text = soup.find_all('span', class_='text')
     detailed_text = soup.find_all('div', class_='author-description')
     tags = soup.find_all('a')
@@ -277,13 +288,57 @@ def extract_text(html_content):
         + made_with_text + ' ' + text_strong + ' ' + text_small_tag_names + ' ' + by_whom_text + ' '
         + text_login_labels
     )
-    processed_text = re.sub(r'(?<=\d),(?=\d)', '', combined_text)
-    words = re.findall(r'\b[\w\d\u4e00-\u9fa5\u3040-\u30ff\u0400-\u04ff]+\b', processed_text.lower())
-    return list(words), len(outwards_links)
+    return combined_text
 
 
-def crawl_website(base_url, politeness_interval, max_pages=150, include_sitemap=True):
+def _extract_generic_text(soup):
+    title = soup.title.get_text(' ', strip=True) if soup.title else ''
+    content = soup.find('main') or soup.find('article') or soup.body or soup
+    excluded_tags = ['script', 'style', 'noscript', 'template', 'svg', 'nav', 'header', 'footer', 'aside', 'form']
+    excluded_nodes = content.find_all(excluded_tags)
+    top_level_excluded_nodes = [node for node in excluded_nodes if node.find_parent(excluded_tags) is None]
+    for node in top_level_excluded_nodes:
+        node.decompose()
+    body_text = content.get_text(' ', strip=True)
+    return ' '.join(part for part in (title, body_text) if part)
+
+
+def extract_text(html_content, profile=DEFAULT_CRAWL_PROFILE):
+    _validate_crawl_profile(profile)
+
+    soup = BeautifulSoup(html_content, 'html.parser')
+    outward_links = soup.find_all('a', href=True)
+    if profile == 'quotes':
+        extracted_text = _extract_quotes_text(soup)
+    else:
+        extracted_text = _extract_generic_text(soup)
+    return _tokenize_text(extracted_text), len(outward_links)
+
+
+def _initial_crawl_urls(base_url, profile, sitemap_urls=()):
+    _validate_crawl_profile(profile)
+
+    base_seed = _normalize_url(base_url, base_url) or base_url.rstrip('/')
+    initial_seeds = [base_seed]
+    if profile == 'quotes':
+        login_seed = _normalize_url(base_url, '/login')
+        if login_seed:
+            initial_seeds.insert(0, login_seed)
+
+    initial_seed_set = set(initial_seeds)
+    sitemap_seeds = sorted(set(sitemap_urls) - initial_seed_set)
+    return initial_seeds + sitemap_seeds, len(sitemap_seeds)
+
+
+def crawl_website(
+    base_url,
+    politeness_interval,
+    max_pages=150,
+    include_sitemap=True,
+    profile=DEFAULT_CRAWL_PROFILE,
+):
     global LAST_CRAWL_STATS
+    _validate_crawl_profile(profile)
 
     pages = []
     page_urls = []
@@ -312,8 +367,8 @@ def crawl_website(base_url, politeness_interval, max_pages=150, include_sitemap=
             return None
 
         html_content = fetched_page.html
-        words, links = extract_text(html_content)
-        if canonical_url.endswith('/login') or '/login/' in canonical_url:
+        words, links = extract_text(html_content, profile=profile)
+        if profile == 'quotes' and (canonical_url.endswith('/login') or '/login/' in canonical_url):
             words.append('login')
 
         pages.append(words)
@@ -328,25 +383,10 @@ def crawl_website(base_url, politeness_interval, max_pages=150, include_sitemap=
                 pending_urls.append(item)
         return html_content
 
-    seed_url = _normalize_url(base_url, base_url) or base_url.rstrip('/')
-    login_url = _normalize_url(base_url, '/login')
-    if login_url:
-        pending_urls.append(login_url)
-    pending_urls.append(seed_url)
-
+    sitemap_urls = set()
     if include_sitemap:
-        for item in sorted(_sitemap_candidates(base_url, session)):
-            pending_urls.append(item)
-
-    deduped_queue = []
-    seen_pending = set()
-    for item in pending_urls:
-        if item and item not in seen_pending:
-            deduped_queue.append(item)
-            seen_pending.add(item)
-    pending_urls = deduped_queue
-
-    sitemap_seed_count = max(len(pending_urls) - 2, 0)
+        sitemap_urls = _sitemap_candidates(base_url, session)
+    pending_urls, sitemap_seed_count = _initial_crawl_urls(base_url, profile, sitemap_urls)
 
     with tqdm(desc='Crawling Pages', dynamic_ncols=True) as pbar:
         while pending_urls and len(pages) < max_pages:
@@ -387,6 +427,7 @@ async def crawl_website_async(
     max_pages=150,
     include_sitemap=True,
     concurrency=DEFAULT_ASYNC_CONCURRENCY,
+    profile=DEFAULT_CRAWL_PROFILE,
 ):
     global LAST_CRAWL_STATS
 
@@ -394,6 +435,7 @@ async def crawl_website_async(
         raise RuntimeError('Async crawl mode requires httpx. Install it with: pip install httpx')
     if concurrency < 1:
         raise ValueError('concurrency must be >= 1')
+    _validate_crawl_profile(profile)
 
     pages = []
     page_urls = []
@@ -406,29 +448,14 @@ async def crawl_website_async(
     started_at = time.perf_counter()
     started_stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-    seed_url = _normalize_url(base_url, base_url) or base_url.rstrip('/')
-    login_url = _normalize_url(base_url, '/login')
-    if login_url:
-        pending_urls.append(login_url)
-    pending_urls.append(seed_url)
-
+    sitemap_urls = set()
     if include_sitemap:
         sitemap_session = _build_session()
         try:
-            for item in sorted(_sitemap_candidates(base_url, sitemap_session)):
-                pending_urls.append(item)
+            sitemap_urls = _sitemap_candidates(base_url, sitemap_session)
         finally:
             sitemap_session.close()
-
-    deduped_queue = []
-    seen_pending = set()
-    for item in pending_urls:
-        if item and item not in seen_pending:
-            deduped_queue.append(item)
-            seen_pending.add(item)
-    pending_urls = deduped_queue
-
-    sitemap_seed_count = max(len(pending_urls) - 2, 0)
+    pending_urls, sitemap_seed_count = _initial_crawl_urls(base_url, profile, sitemap_urls)
 
     async with httpx.AsyncClient(headers=REQUEST_HEADERS, follow_redirects=True) as client:
         with tqdm(desc='Crawling Pages (async)', dynamic_ncols=True) as pbar:
@@ -460,8 +487,8 @@ async def crawl_website_async(
                         continue
 
                     html_content = fetched_page.html
-                    words, links = extract_text(html_content)
-                    if canonical_url.endswith('/login') or '/login/' in canonical_url:
+                    words, links = extract_text(html_content, profile=profile)
+                    if profile == 'quotes' and (canonical_url.endswith('/login') or '/login/' in canonical_url):
                         words.append('login')
 
                     pages.append(words)
@@ -508,6 +535,7 @@ def crawl_website_by_mode(
     include_sitemap=True,
     crawl_mode=DEFAULT_CRAWL_MODE,
     concurrency=DEFAULT_ASYNC_CONCURRENCY,
+    profile=DEFAULT_CRAWL_PROFILE,
 ):
     if crawl_mode == 'async':
         return asyncio.run(
@@ -517,9 +545,16 @@ def crawl_website_by_mode(
                 max_pages=max_pages,
                 include_sitemap=include_sitemap,
                 concurrency=concurrency,
+                profile=profile,
             )
         )
-    return crawl_website(base_url, politeness_interval, max_pages=max_pages, include_sitemap=include_sitemap)
+    return crawl_website(
+        base_url,
+        politeness_interval,
+        max_pages=max_pages,
+        include_sitemap=include_sitemap,
+        profile=profile,
+    )
 
 
 def build_index(pages, invert_index_file, page_urls, outward_links):
