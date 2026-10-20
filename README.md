@@ -17,7 +17,20 @@ This project has been upgraded from a basic crawler/search demo into a portfolio
 - Expanded quality pipeline: lint, tests, coverage gate, package build artifacts.
 - Multi-version CI validation across Python 3.10 / 3.11 / 3.12.
 
-## Install
+## macOS Quick Start
+
+The project supports Python 3.10 and later; use Python 3.12 for the local setup shown here. Create a project-local environment, install the development dependencies, run the tests, then load the included sample index:
+
+When developing from an external SSD, create the cache and temporary directories on that volume, then verify that each path is on the mounted SSD before installing. Set `PIP_CACHE_DIR`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`, and `TMPDIR` in the same shell that runs installation; for uv-based installs, set its cache, Python, and tool paths there too. In particular, verify `TMPDIR` exists and resolves to the external volume before installing.
+
+```sh
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements-dev.txt
+.venv/bin/python -m pytest -q
+.venv/bin/python -m web_crawling load
+```
+
+## Install (Windows PowerShell)
 
 ```powershell
 python -m venv .venv
@@ -72,7 +85,7 @@ The crawler focuses on reliability and explainability:
 - Uses a reusable HTTP session for better performance.
 - Applies automatic retry policy to transient failures (`429/5xx`).
 - Enforces request timeout and politeness interval.
-- Follows only internal links (same host) to prevent scope drift.
+- Follows only same-origin links and sitemap entries (matching scheme, hostname, and effective port), records same-origin redirect destinations, and rejects cross-origin redirects.
 - Optionally seeds with `/sitemap.xml` URLs when available.
 
 After each build, a structured crawl report is generated to summarize quality and scale.
