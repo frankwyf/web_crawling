@@ -60,6 +60,13 @@ class CrawlStats:
     duration_seconds: float
 
 
+@dataclass(frozen=True)
+class _FetchedPage:
+    html: str
+    url: str
+    resolution_url: str
+
+
 LAST_CRAWL_STATS: Optional[CrawlStats] = None
 
 
@@ -95,8 +102,24 @@ def _normalize_url(base_url, href):
     return clean.rstrip('/') or clean
 
 
-def _is_same_site(base_url, candidate):
-    return urlparse(base_url).netloc == urlparse(candidate).netloc
+def _is_same_origin(base_url, candidate):
+    def origin(url):
+        parsed = urlparse(url)
+        scheme = parsed.scheme.lower()
+        hostname = parsed.hostname
+        if scheme not in {'http', 'https'} or not hostname:
+            return None
+
+        port = parsed.port
+        if port is None:
+            port = 443 if scheme == 'https' else 80
+        return scheme, hostname, port
+
+    try:
+        base_origin = origin(base_url)
+        return base_origin is not None and base_origin == origin(candidate)
+    except ValueError:
+        return False
 
 
 def _extract_internal_links(html_content, current_url, base_url):
@@ -106,7 +129,7 @@ def _extract_internal_links(html_content, current_url, base_url):
         normalized = _normalize_url(current_url, anchor['href'])
         if not normalized:
             continue
-        if _is_same_site(base_url, normalized):
+        if _is_same_origin(base_url, normalized):
             links.add(normalized)
     return links
 
@@ -118,7 +141,7 @@ def _sitemap_candidates(base_url, session):
 
     try:
         response = session.get(sitemap_url, timeout=(CONNECT_TIMEOUT, REQUEST_TIMEOUT))
-        if response.status_code >= 400:
+        if response.status_code >= 400 or not _is_same_origin(base_url, response.url):
             return set()
         soup = BeautifulSoup(response.text, 'xml')
         urls = set()
@@ -126,37 +149,73 @@ def _sitemap_candidates(base_url, session):
             if not loc.text:
                 continue
             normalized = _normalize_url(base_url, loc.text.strip())
-            if normalized and _is_same_site(base_url, normalized):
+            if normalized and _is_same_origin(base_url, normalized):
                 urls.add(normalized)
         return urls
     except requests.RequestException:
         return set()
 
 
-def fetch_page(url, politeness_interval, session=None):
+def _fetch_page_result(url, politeness_interval, session=None):
     http = session or _build_session()
     try:
         response = http.get(url, timeout=(CONNECT_TIMEOUT, REQUEST_TIMEOUT))
         response.raise_for_status()
+        resolution_url = str(response.url)
+        if not _is_same_origin(url, resolution_url):
+            print(RED_COLOR + f"Rejected cross-origin redirect: {url} -> {resolution_url}" + END_COLOR)
+            return None
+        final_url = _normalize_url(url, resolution_url)
+        if not final_url:
+            return None
         time.sleep(politeness_interval)
     except requests.RequestException as e:
         print(RED_COLOR + f"Failed to fetch page: {url}" + END_COLOR)
         print(e)
         return None
-    return response.text
+    except ValueError as e:
+        print(RED_COLOR + f"Failed to resolve final URL for page: {url}" + END_COLOR)
+        print(e)
+        return None
+    return _FetchedPage(response.text, final_url, resolution_url)
 
 
-async def fetch_page_async(url, politeness_interval, client):
+def fetch_page(url, politeness_interval, session=None):
+    result = _fetch_page_result(url, politeness_interval, session=session)
+    return result.html if result else None
+
+
+async def _fetch_page_result_async(url, politeness_interval, client):
     try:
-        response = await client.get(url, timeout=httpx.Timeout(REQUEST_TIMEOUT, connect=CONNECT_TIMEOUT))
+        response = await client.get(
+            url,
+            timeout=httpx.Timeout(REQUEST_TIMEOUT, connect=CONNECT_TIMEOUT),
+            follow_redirects=True,
+        )
         response.raise_for_status()
+        resolution_url = str(response.url)
+        if not _is_same_origin(url, resolution_url):
+            print(RED_COLOR + f"Rejected cross-origin redirect: {url} -> {resolution_url}" + END_COLOR)
+            return None
+        final_url = _normalize_url(url, resolution_url)
+        if not final_url:
+            return None
         if politeness_interval > 0:
             await asyncio.sleep(politeness_interval)
     except httpx.HTTPError as e:
         print(RED_COLOR + f"Failed to fetch page: {url}" + END_COLOR)
         print(e)
         return None
-    return response.text
+    except ValueError as e:
+        print(RED_COLOR + f"Failed to resolve final URL for page: {url}" + END_COLOR)
+        print(e)
+        return None
+    return _FetchedPage(response.text, final_url, resolution_url)
+
+
+async def fetch_page_async(url, politeness_interval, client):
+    result = await _fetch_page_result_async(url, politeness_interval, client)
+    return result.html if result else None
 
 
 def extract_text(html_content):
@@ -242,21 +301,27 @@ def crawl_website(base_url, politeness_interval, max_pages=150, include_sitemap=
         if target_url in seen_urls:
             return None
 
-        html_content = fetch_page(target_url, politeness_interval, session=session)
-        if not html_content:
+        fetched_page = _fetch_page_result(target_url, politeness_interval, session=session)
+        if not fetched_page:
             failed_urls.add(target_url)
             return None
 
+        canonical_url = fetched_page.url
+        if canonical_url in seen_urls:
+            seen_urls.add(target_url)
+            return None
+
+        html_content = fetched_page.html
         words, links = extract_text(html_content)
-        if target_url.endswith('/login') or '/login/' in target_url:
+        if canonical_url.endswith('/login') or '/login/' in canonical_url:
             words.append('login')
 
         pages.append(words)
-        page_urls.append(target_url)
+        page_urls.append(canonical_url)
         page_links.append(links)
-        seen_urls.add(target_url)
+        seen_urls.update((target_url, canonical_url))
 
-        internal_links = _extract_internal_links(html_content, target_url, base_url)
+        internal_links = _extract_internal_links(html_content, fetched_page.resolution_url, base_url)
         total_discovered_links += len(internal_links)
         for item in sorted(internal_links):
             if item not in seen_urls:
@@ -380,25 +445,31 @@ async def crawl_website_async(
                     continue
 
                 batch_results = await asyncio.gather(
-                    *(fetch_page_async(target, politeness_interval, client) for target in batch)
+                    *(_fetch_page_result_async(target, politeness_interval, client) for target in batch)
                 )
 
-                for target_url, html_content in zip(batch, batch_results):
+                for target_url, fetched_page in zip(batch, batch_results):
                     in_flight.discard(target_url)
-                    if not html_content:
+                    if not fetched_page:
                         failed_urls.add(target_url)
                         continue
 
+                    canonical_url = fetched_page.url
+                    if canonical_url in seen_urls:
+                        seen_urls.add(target_url)
+                        continue
+
+                    html_content = fetched_page.html
                     words, links = extract_text(html_content)
-                    if target_url.endswith('/login') or '/login/' in target_url:
+                    if canonical_url.endswith('/login') or '/login/' in canonical_url:
                         words.append('login')
 
                     pages.append(words)
-                    page_urls.append(target_url)
+                    page_urls.append(canonical_url)
                     page_links.append(links)
-                    seen_urls.add(target_url)
+                    seen_urls.update((target_url, canonical_url))
 
-                    internal_links = _extract_internal_links(html_content, target_url, base_url)
+                    internal_links = _extract_internal_links(html_content, fetched_page.resolution_url, base_url)
                     total_discovered_links += len(internal_links)
                     for item in sorted(internal_links):
                         if item not in seen_urls and item not in in_flight:
