@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -43,6 +43,7 @@ DEFAULT_CRAWL_MODE = 'sync'
 DEFAULT_ASYNC_CONCURRENCY = 8
 DEFAULT_CRAWL_PROFILE = 'generic'
 CRAWL_PROFILES = {'generic', 'quotes'}
+_TRACKING_QUERY_KEYS = {'dclid', 'fbclid', 'gclid', 'mc_cid', 'mc_eid', 'msclkid'}
 
 index = {}
 
@@ -99,9 +100,20 @@ def _normalize_url(base_url, href):
     parsed = urlparse(normalized)
     if parsed.scheme not in {'http', 'https'}:
         return None
-    clean_path = parsed.path or '/'
+
+    query_params = parse_qsl(parsed.query, keep_blank_values=True)
+    query_params = [
+        (key, value)
+        for key, value in query_params
+        if not key.casefold().startswith('utm_') and key.casefold() not in _TRACKING_QUERY_KEYS
+    ]
+    clean_query = urlencode(query_params)
+
+    clean_path = parsed.path.rstrip('/')
     clean = f'{parsed.scheme}://{parsed.netloc}{clean_path}'
-    return clean.rstrip('/') or clean
+    if clean_query:
+        clean += f'?{clean_query}'
+    return clean
 
 
 def _is_same_origin(base_url, candidate):
