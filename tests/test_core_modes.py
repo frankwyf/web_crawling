@@ -150,6 +150,134 @@ def test_generic_profile_starts_at_base_and_does_not_seed_login(monkeypatch, mod
     assert 'scriptsecret' not in indexed_words
 
 
+@pytest.mark.parametrize('mode', ['sync', 'async'])
+def test_crawler_indexes_distinct_query_pages_and_deduplicates_tracking_links(monkeypatch, mode):
+    root_url = 'https://example.com'
+    page_one_url = 'https://example.com/items?page=1'
+    page_two_url = 'https://example.com/items?page=2'
+    pages_html = {
+        root_url: (FIXTURE_DIR / 'query_root.html').read_text(encoding='utf-8'),
+        page_one_url: (FIXTURE_DIR / 'query_items_page_1.html').read_text(encoding='utf-8'),
+        page_two_url: (FIXTURE_DIR / 'query_items_page_2.html').read_text(encoding='utf-8'),
+    }
+    requested = []
+
+    def fetch(url, politeness_interval, session=None):
+        requested.append(url)
+        html = pages_html.get(url)
+        return core._FetchedPage(html, url, url) if html else None
+
+    async def fetch_async(url, politeness_interval, client):
+        requested.append(url)
+        html = pages_html.get(url)
+        return core._FetchedPage(html, url, url) if html else None
+
+    monkeypatch.setattr(core, '_fetch_page_result', fetch)
+    monkeypatch.setattr(core, '_fetch_page_result_async', fetch_async)
+    monkeypatch.setattr(core, '_build_session', lambda: FakeRedirectSession({}))
+    monkeypatch.setattr(core.httpx, 'AsyncClient', lambda **kwargs: FakeAsyncRedirectClient({}))
+
+    pages, urls, _ = _run_crawl_mode(mode)
+
+    assert len(urls) == 3
+    assert set(urls) == {root_url, page_one_url, page_two_url}
+    assert requested.count(page_one_url) == 1
+    assert requested.count(page_two_url) == 1
+    assert not any('utm_' in url or 'gclid=' in url for url in requested)
+    indexed_words = {word for page in pages for word in page}
+    assert {'pageonecontent', 'pagetwocontent'} <= indexed_words
+
+
+@pytest.mark.parametrize(
+    ('href', 'expected'),
+    [
+        ('/items?page=1', 'https://example.com/items?page=1'),
+        ('/items?page=2', 'https://example.com/items?page=2'),
+        (
+            '/items?page=2&utm_source=mail&utm_campaign=spring&gclid=abc',
+            'https://example.com/items?page=2',
+        ),
+        ('/items?page=2&UTM_SOURCE=mail&GCLID=abc', 'https://example.com/items?page=2'),
+        ('/items?page=2&ref=section', 'https://example.com/items?page=2&ref=section'),
+        ('/items/?q=hello%20world&q=again', 'https://example.com/items?q=hello+world&q=again'),
+        ('/items?tag=first&tag=second', 'https://example.com/items?tag=first&tag=second'),
+        ('/items?utm_source=mail&fbclid=abc', 'https://example.com/items'),
+    ],
+)
+def test_url_normalization_preserves_content_query_order_and_repeats(href, expected):
+    assert core._normalize_url('https://example.com', href) == expected
+
+
+def test_url_normalization_does_not_sort_query_parameters():
+    root = 'https://example.com'
+
+    assert core._normalize_url(root, '/items?a=1&b=2') != core._normalize_url(root, '/items?b=2&a=1')
+    assert core._normalize_url(root, '/items?tag=first&tag=second') != core._normalize_url(
+        root, '/items?tag=second&tag=first'
+    )
+
+
+def test_sitemap_candidates_keep_query_pages_and_drop_tracking_parameters(monkeypatch):
+    sitemap_urls = [
+        'https://example.com/items?page=1',
+        'https://example.com/items?page=2',
+        'https://example.com/items?page=2&utm_source=sitemap',
+        'https://example.com/items?page=2&gclid=campaign',
+        'https://example.com:8443/items?page=3',
+    ]
+    response = SimpleNamespace(
+        status_code=200,
+        text='<urlset></urlset>',
+        url='https://example.com/sitemap.xml',
+    )
+    session = SimpleNamespace(get=lambda *args, **kwargs: response)
+    fake_soup = SimpleNamespace(
+        find_all=lambda tag: [SimpleNamespace(text=url) for url in sitemap_urls]
+    )
+    monkeypatch.setattr(core, 'BeautifulSoup', lambda *args: fake_soup)
+
+    urls = core._sitemap_candidates('https://example.com', session)
+
+    assert urls == {
+        'https://example.com/items?page=1',
+        'https://example.com/items?page=2',
+    }
+
+
+@pytest.mark.parametrize('mode', ['sync', 'async'])
+def test_crawler_preserves_query_on_final_redirect_and_resolves_relative_query_link(monkeypatch, mode):
+    root_url = 'https://example.com'
+    final_url = 'https://example.com/items?page=2'
+    previous_page_url = 'https://example.com/items?page=1'
+    pages_html = {
+        root_url: '<main><h1>Redirected page</h1><a href="?page=1">Previous page</a></main>',
+        previous_page_url: (FIXTURE_DIR / 'query_items_page_1.html').read_text(encoding='utf-8'),
+    }
+    requested = []
+
+    def fetch(url, politeness_interval, session=None):
+        requested.append(url)
+        html = pages_html.get(url)
+        if not html:
+            return None
+        canonical_url = final_url if url == root_url else url
+        return core._FetchedPage(html, canonical_url, canonical_url)
+
+    async def fetch_async(url, politeness_interval, client):
+        return fetch(url, politeness_interval)
+
+    monkeypatch.setattr(core, '_fetch_page_result', fetch)
+    monkeypatch.setattr(core, '_fetch_page_result_async', fetch_async)
+    monkeypatch.setattr(core, '_build_session', lambda: FakeRedirectSession({}))
+    monkeypatch.setattr(core.httpx, 'AsyncClient', lambda **kwargs: FakeAsyncRedirectClient({}))
+
+    pages, urls, _ = _run_crawl_mode(mode)
+
+    assert set(urls) == {final_url, previous_page_url}
+    assert requested == [root_url, previous_page_url]
+    assert 'pageonecontent' in {word for page in pages for word in page}
+
+
 def test_url_normalization_and_same_origin_helpers():
     root = 'https://example.com'
     assert core._normalize_url(root, '/a/b/') == 'https://example.com/a/b'

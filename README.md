@@ -105,6 +105,8 @@ The crawler focuses on reliability and explainability:
 - Follows only same-origin links and sitemap entries (matching scheme, hostname, and effective port), records same-origin redirect destinations, and rejects cross-origin redirects.
 - Optionally seeds with `/sitemap.xml` URLs when available.
 
+URL normalization keeps content query parameters, including repeated parameters, in their original order; it does not sort them. Query fields are decoded and re-encoded using standard form encoding, so spaces are written as `+`. It drops case-insensitive names matching `utm_*`, `gclid`, `dclid`, `fbclid`, `msclkid`, `mc_cid`, and `mc_eid`, while retaining unknown fields such as `ref` because they may affect page content.
+
 After each build, a structured crawl report is generated to summarize quality and scale.
 
 ## API
