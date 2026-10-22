@@ -1,8 +1,7 @@
 import asyncio
-import json
-import os
 import re
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
@@ -13,6 +12,8 @@ from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from tqdm import tqdm
 from urllib3.util import Retry
+
+from .storage import atomic_write_json, read_index, validate_index
 
 try:
     import httpx
@@ -157,16 +158,18 @@ def _sitemap_candidates(base_url, session):
         response = session.get(sitemap_url, timeout=(CONNECT_TIMEOUT, REQUEST_TIMEOUT))
         if response.status_code >= 400 or not _is_same_origin(base_url, response.url):
             return set()
-        soup = BeautifulSoup(response.text, 'xml')
+        root = ET.fromstring(response.text)
+        if root.tag.rsplit('}', 1)[-1] != 'urlset':
+            return set()
         urls = set()
-        for loc in soup.find_all('loc'):
+        for loc in root.findall('./{*}url/{*}loc'):
             if not loc.text:
                 continue
             normalized = _normalize_url(base_url, loc.text.strip())
             if normalized and _is_same_origin(base_url, normalized):
                 urls.add(normalized)
         return urls
-    except requests.RequestException:
+    except (requests.RequestException, ET.ParseError):
         return set()
 
 
@@ -570,6 +573,10 @@ def crawl_website_by_mode(
 
 
 def build_index(pages, invert_index_file, page_urls, outward_links):
+    if not pages:
+        raise ValueError('No pages were crawled; existing index was not replaced.')
+    if len(pages) != len(page_urls) or len(pages) != len(outward_links):
+        raise ValueError('Page content, URLs, and link counts must have equal lengths.')
     file_index = {}
     total_lines = sum(len(page_content) for page_content in pages)
     with tqdm(total=total_lines, desc='Building Inverted Index', dynamic_ncols=True) as pbar:
@@ -593,18 +600,16 @@ def build_index(pages, invert_index_file, page_urls, outward_links):
                     )
                 pbar.update(1)
                 pbar.set_postfix_str(f"Processed {pbar.n}/{total_lines} Tokens")
+    validate_index(file_index)
+    atomic_write_json(invert_index_file, file_index)
     print(GREEN_COLOR + 'Inverted index of ' + str(len(file_index)) + ' words built successfully.' + END_COLOR)
-
-    with open(invert_index_file, 'w', encoding='utf-8') as f:
-        json.dump(file_index, f, ensure_ascii=False, indent=2)
 
     return file_index
 
 
 def load_index_json(invert_index_file):
     global index
-    with open(invert_index_file, 'r', encoding='utf-8') as f:
-        loaded = json.load(f)
+    loaded = read_index(invert_index_file)
     index.clear()
     index.update(loaded)
     return index
@@ -819,10 +824,7 @@ def find_pages(query, index_data):
 
 
 def ensure_index_loaded(index_path):
-    if len(index) == 0:
-        if not os.path.exists(index_path):
-            raise FileNotFoundError(f"Index file not found: {index_path}")
-        load_index_json(index_path)
+    load_index_json(index_path)
 
 
 def get_last_crawl_stats():
@@ -875,6 +877,5 @@ def generate_crawl_report(report_path, pages, page_urls, page_links, index_data,
         'top_pages': page_summaries,
     }
 
-    with open(report_path, 'w', encoding='utf-8') as f:
-        json.dump(report, f, ensure_ascii=False, indent=2)
+    atomic_write_json(report_path, report)
     return report

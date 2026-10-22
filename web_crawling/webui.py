@@ -522,6 +522,7 @@ def create_app(
         index.update(index_data)
     elif index_path:
         ensure_index_loaded(index_path)
+        _SEARCH_CACHE.clear()
 
     @app.get('/')
     def home():

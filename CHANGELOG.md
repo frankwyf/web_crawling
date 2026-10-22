@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-22
+
+### Added
+
+- Offline `demo` command with a bundled HTML corpus and `--version` output.
+- Compatible index schema validation and atomic index/report file replacement.
+- Regression coverage for write interruption, malformed data, command failures and actual sitemap XML.
+- External-storage shell setup, index/API contracts, architecture, release guide and maturity roadmap.
+- macOS and Windows CI, installed-wheel smoke checks, reusable release gates and artifact checksums.
+
+### Fixed
+
+- Failed or empty crawls no longer replace an existing index with an empty file.
+- Explicit index paths reload the requested data rather than silently using an unrelated loaded index.
+- CLI operational failures return status 1; running without arguments starts the interactive shell.
+- Flat sitemap XML no longer requires an undeclared optional parser.
+- Content query parameters distinguish paginated pages while common tracking parameters deduplicate.
+
+### Compatibility
+
+- Existing JSON index fields and search responses are retained; malformed historical indexes now fail validation.
+- Package version metadata is derived from `web_crawling.__version__`.
+- Each index/report is replaced separately; the pair is not a single transaction.
+
+### Security
+
+- Upgrade Requests to 2.34.2 and Flask to 3.1.3 to address known upstream advisories.
+- Gate package/release jobs on a strict pip-audit dependency scan and retain its JSON result.
+
+## [0.1.0]
+
 ### Added
 
 - Local web UI entry via `python search.py web`.

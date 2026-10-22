@@ -8,4 +8,11 @@ coverage/
 logs/
 crawl_report.json
 *.egg-info/
-dist/.tox/
+dist/
+build/
+.tox/
+.ruff_cache/
+demo_index.json
+demo_report.json
+dependency-audit.json
+audit-requirements.txt

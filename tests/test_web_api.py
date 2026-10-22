@@ -283,3 +283,19 @@ def test_portfolio_page_renders(tmp_path):
     assert response.status_code == 200
     assert 'Python Crawler Portfolio Storyboard' in html
     assert 'Performance Trend' in html
+
+
+def test_creating_file_backed_app_clears_previous_query_cache(tmp_path):
+    import json
+
+    first, second = tmp_path / 'first.json', tmp_path / 'second.json'
+    first.write_text(json.dumps(_sample_index()), encoding='utf-8')
+    second.write_text('{}', encoding='utf-8')
+    first_app = create_app(index_path=str(first), log_file_path=str(tmp_path / 'first_{date}.log'))
+    assert first_app.test_client().get('/api/search?q=hello').get_json()['results']
+
+    second_app = create_app(index_path=str(second), log_file_path=str(tmp_path / 'second_{date}.log'))
+    response = second_app.test_client().get('/api/search?q=hello').get_json()
+
+    assert response['results'] == []
+    assert response['meta']['cached'] is False
