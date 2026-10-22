@@ -1,4 +1,5 @@
 import asyncio
+from html import escape
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -217,7 +218,7 @@ def test_url_normalization_does_not_sort_query_parameters():
     )
 
 
-def test_sitemap_candidates_keep_query_pages_and_drop_tracking_parameters(monkeypatch):
+def test_sitemap_candidates_keep_query_pages_and_drop_tracking_parameters():
     sitemap_urls = [
         'https://example.com/items?page=1',
         'https://example.com/items?page=2',
@@ -227,14 +228,10 @@ def test_sitemap_candidates_keep_query_pages_and_drop_tracking_parameters(monkey
     ]
     response = SimpleNamespace(
         status_code=200,
-        text='<urlset></urlset>',
+        text='<urlset>' + ''.join(f'<url><loc>{escape(url)}</loc></url>' for url in sitemap_urls) + '</urlset>',
         url='https://example.com/sitemap.xml',
     )
     session = SimpleNamespace(get=lambda *args, **kwargs: response)
-    fake_soup = SimpleNamespace(
-        find_all=lambda tag: [SimpleNamespace(text=url) for url in sitemap_urls]
-    )
-    monkeypatch.setattr(core, 'BeautifulSoup', lambda *args: fake_soup)
 
     urls = core._sitemap_candidates('https://example.com', session)
 
@@ -314,7 +311,7 @@ def test_extract_internal_links_rejects_cross_origin_links():
     assert links == {'https://example.com/internal'}
 
 
-def test_sitemap_candidates_reject_cross_origin_seeds(monkeypatch):
+def test_sitemap_candidates_reject_cross_origin_seeds():
     sitemap_urls = [
         'https://example.com/secure',
         'http://example.com/insecure',
@@ -322,14 +319,10 @@ def test_sitemap_candidates_reject_cross_origin_seeds(monkeypatch):
     ]
     response = SimpleNamespace(
         status_code=200,
-        text='<urlset></urlset>',
+        text='<urlset>' + ''.join(f'<url><loc>{escape(url)}</loc></url>' for url in sitemap_urls) + '</urlset>',
         url='https://example.com/sitemap.xml',
     )
     session = SimpleNamespace(get=lambda *args, **kwargs: response)
-    fake_soup = SimpleNamespace(
-        find_all=lambda tag: [SimpleNamespace(text=url) for url in sitemap_urls]
-    )
-    monkeypatch.setattr(core, 'BeautifulSoup', lambda *args: fake_soup)
 
     assert core._sitemap_candidates('https://example.com', session) == {'https://example.com/secure'}
 

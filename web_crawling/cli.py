@@ -1,6 +1,8 @@
 import argparse
 import os
+import sys
 
+from . import __version__
 from .benchmark import run_benchmark_suite
 from .core import (
     BLUE_COLOR,
@@ -26,6 +28,8 @@ from .core import (
     index,
     print_index,
 )
+from .demo import run_demo
+from .storage import validate_output_paths
 from .webui import run_web_ui
 
 
@@ -66,6 +70,7 @@ def handle_command(
     profile=DEFAULT_CRAWL_PROFILE,
 ):
     if command == 'build':
+        validate_output_paths(index_path, report_file)
         pages_content, urls, num_links = crawl_website_by_mode(
             base_url,
             politeness_interval,
@@ -161,6 +166,7 @@ def interactive_loop(
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Web crawler and inverted-index search tool.')
+    parser.add_argument('--version', action='version', version=f'%(prog)s {__version__}')
 
     common_args = argparse.ArgumentParser(add_help=False)
     common_args.add_argument('--index-file', default=DEFAULT_INDEX_FILE, help='Path to the inverted index JSON file.')
@@ -228,8 +234,12 @@ def parse_args():
     web_parser.add_argument('--port', type=int, default=DEFAULT_WEB_PORT, help='Port for the web UI server.')
 
     subparsers.add_parser('benchmark', parents=[benchmark_args], help='Run search performance benchmark suite.')
+    demo_parser = subparsers.add_parser('demo', help='Build an index from bundled HTML without network access.')
+    demo_parser.add_argument('--index-file', default='demo_index.json', help='Output index path.')
+    demo_parser.add_argument('--report-file', default='demo_report.json', help='Output crawl report path.')
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    return parser.parse_args(['interactive']) if args.command is None else args
 
 
 def main():
@@ -237,7 +247,10 @@ def main():
     command = args.command or 'interactive'
 
     try:
-        if command == 'interactive':
+        if command == 'demo':
+            run_demo(args.index_file, args.report_file)
+            print(f'Offline demo ready: {args.index_file}; report: {args.report_file}')
+        elif command == 'interactive':
             interactive_loop(
                 args.index_file,
                 args.base_url,
@@ -307,5 +320,6 @@ def main():
                 fail_on_regression=args.fail_on_regression,
             )
             _print_benchmark_summary(summary)
-    except FileNotFoundError as error:
-        print(RED_COLOR + str(error) + END_COLOR)
+    except (OSError, ValueError, RuntimeError) as error:
+        print(f'Error: {error}', file=sys.stderr)
+        raise SystemExit(1) from error
