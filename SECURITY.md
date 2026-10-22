@@ -25,6 +25,6 @@ Use trusted local indexes and crawl only authorized sites. Origin filtering chec
 
 ## Dependency checks
 
-CI runs a strict pip-audit scan of installed dependencies and gates package/release jobs on its success. The local editable project is skipped because it is not a published PyPI distribution. A clean advisory scan means no known advisories were returned at that time, not that the project is free of vulnerabilities.
+CI freezes the complete installed dependency set, excluding the local editable project because it is not a published PyPI distribution. pip-audit checks that resolved list in strict mode without resolving dependencies again; transitive dependencies are already present in the list. Package/release jobs require success. A clean advisory scan means no known advisories were returned at that time, not that the project is free of vulnerabilities.
 
 v0.2.0 updates Requests and Flask after checking the upstream [Requests netrc advisory](https://github.com/psf/requests/security/advisories/GHSA-9hjg-9r4m-mvj7), [Requests temporary-file advisory](https://github.com/psf/requests/security/advisories/GHSA-gc5v-m9x4-r6x2), and [Flask session-header advisory](https://github.com/pallets/flask/security/advisories/GHSA-68rp-wp8r-4726).

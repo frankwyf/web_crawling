@@ -54,13 +54,17 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e . pip-audit==2.10.1
       - name: Audit installed dependencies against known advisories
-        run: python -m pip_audit --skip-editable --strict --format=json --output dependency-audit.json
+        run: |
+          python -m pip freeze --exclude-editable > audit-requirements.txt
+          python -m pip_audit --strict --no-deps --disable-pip -r audit-requirements.txt --format=json --output dependency-audit.json
       - name: Upload audit result
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: dependency-audit
-          path: dependency-audit.json
+          path: |
+            dependency-audit.json
+            audit-requirements.txt
 
   package:
     runs-on: ${{ matrix.os }}

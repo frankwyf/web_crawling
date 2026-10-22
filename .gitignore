@@ -15,3 +15,4 @@ build/
 demo_index.json
 demo_report.json
 dependency-audit.json
+audit-requirements.txt
